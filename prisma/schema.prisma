@@ -202,7 +202,7 @@ model Pagamento {
 model PagamentoItem {
   id                Int     @id @default(autoincrement())
   pagamentoId       Int
-  itemEntregaId     Int
+  itemEntregaId     Int     @unique
   quantidadeVendida Int
   valorVendido      Decimal @db.Decimal(10, 2)
   valorDevolvido    Decimal @db.Decimal(10, 2)
@@ -210,8 +210,6 @@ model PagamentoItem {
 
   pagamento   Pagamento   @relation(fields: [pagamentoId], references: [id], onDelete: Cascade)
   itemEntrega ItemEntrega @relation(fields: [itemEntregaId], references: [id])
-
-  @@unique([pagamentoId, itemEntregaId])
 }
 
 model Historico {
