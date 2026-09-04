@@ -5,12 +5,20 @@ export async function GET() {
   const entregas = await prisma.entrega.findMany({
     include: {
       padaria: true,
+
       itens: {
         include: {
           produto: true,
+
+          itensDevolucao: {
+            select: {
+              quantidadeDevolvida: true,
+            },
+          },
         },
       },
     },
+
     orderBy: {
       dataEntrega: "desc",
     },
@@ -38,8 +46,11 @@ export async function POST(request: Request) {
   const entrega = await prisma.entrega.create({
     data: {
       codigo: `ENT-${Date.now()}`,
+
       padariaId: Number(body.padariaId),
+
       dataEntrega: new Date(body.dataEntrega),
+
       criadoPorId: usuario.id,
 
       itens: {
@@ -50,8 +61,14 @@ export async function POST(request: Request) {
             precoUnitario: number;
           }) => ({
             produtoId: Number(item.produtoId),
-            quantidadeEntregue: Number(item.quantidadeEntregue),
-            precoUnitario: Number(item.precoUnitario),
+
+            quantidadeEntregue: Number(
+              item.quantidadeEntregue
+            ),
+
+            precoUnitario: Number(
+              item.precoUnitario
+            ),
           })
         ),
       },
@@ -59,9 +76,16 @@ export async function POST(request: Request) {
 
     include: {
       padaria: true,
+
       itens: {
         include: {
           produto: true,
+
+          itensDevolucao: {
+            select: {
+              quantidadeDevolvida: true,
+            },
+          },
         },
       },
     },
