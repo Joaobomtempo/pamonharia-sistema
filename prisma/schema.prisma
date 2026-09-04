@@ -10,12 +10,230 @@ datasource db {
   provider = "postgresql"
 }
 
+enum TipoUsuario {
+  DONO
+  FUNCIONARIO
+}
+
+enum StatusUsuario {
+  ATIVO
+  INATIVO
+}
+
+enum StatusPadaria {
+  ATIVA
+  INATIVA
+  ARQUIVADA
+}
+
+enum StatusProduto {
+  ATIVO
+  INATIVO
+}
+
+enum StatusEntrega {
+  PENDENTE
+  CONFIRMADA
+  COM_DEVOLUCAO
+  FINALIZADA
+}
+
+enum StatusPagamento {
+  PENDENTE
+  PAGO
+}
+
+enum AcaoHistorico {
+  CRIADO
+  ALTERADO
+  EXCLUIDO
+  FINALIZADO
+  LOGIN
+  TENTATIVA_SENHA
+}
+
 model Usuario {
-  id           Int      @id @default(autoincrement())
+  id           Int           @id @default(autoincrement())
   nomeCompleto String
-  usuario      String   @unique
+  usuario      String        @unique
   senha        String
-  tipo         String
-  status       String   @default("ATIVO")
-  dataCadastro DateTime @default(now())
+  tipo         TipoUsuario
+  status       StatusUsuario @default(ATIVO)
+  dataCadastro DateTime      @default(now())
+  atualizadoEm DateTime      @updatedAt
+
+  permissoes          UsuarioPermissao[]
+  entregasCriadas     Entrega[]          @relation("EntregaCriadaPor")
+  entregasFinalizadas Entrega[]          @relation("EntregaFinalizadaPor")
+  devolucoes          Devolucao[]        @relation("DevolucaoRegistradaPor")
+  pagamentos          Pagamento[]        @relation("PagamentoRegistradoPor")
+  historicos          Historico[]        @relation("HistoricoRealizadoPor")
+  acessos             AcessoSistema[]
+}
+
+model Permissao {
+  id        Int     @id @default(autoincrement())
+  nome      String  @unique
+  descricao String?
+
+  usuarios UsuarioPermissao[]
+}
+
+model UsuarioPermissao {
+  id          Int @id @default(autoincrement())
+  usuarioId   Int
+  permissaoId Int
+
+  usuario   Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  permissao Permissao @relation(fields: [permissaoId], references: [id], onDelete: Cascade)
+
+  @@unique([usuarioId, permissaoId])
+}
+
+model Padaria {
+  id           Int           @id @default(autoincrement())
+  nome         String
+  contato      String?
+  endereco     String?
+  status       StatusPadaria @default(ATIVA)
+  dataCadastro DateTime      @default(now())
+  atualizadoEm DateTime      @updatedAt
+
+  entregas   Entrega[]
+  pagamentos Pagamento[]
+}
+
+model Produto {
+  id              Int           @id @default(autoincrement())
+  nome            String
+  precoCadastrado Decimal       @db.Decimal(10, 2)
+  status          StatusProduto @default(ATIVO)
+  dataCadastro    DateTime      @default(now())
+  atualizadoEm    DateTime      @updatedAt
+
+  itensEntrega ItemEntrega[]
+}
+
+model Entrega {
+  id              Int           @id @default(autoincrement())
+  codigo          String        @unique
+  padariaId       Int
+  dataEntrega     DateTime
+  status          StatusEntrega @default(PENDENTE)
+  observacoes     String?
+  criadoPorId     Int
+  criadoEm        DateTime      @default(now())
+  atualizadoEm    DateTime      @updatedAt
+  finalizadaPorId Int?
+  dataFinalizacao DateTime?
+
+  padaria       Padaria  @relation(fields: [padariaId], references: [id])
+  criadoPor     Usuario  @relation("EntregaCriadaPor", fields: [criadoPorId], references: [id])
+  finalizadaPor Usuario? @relation("EntregaFinalizadaPor", fields: [finalizadaPorId], references: [id])
+
+  itens      ItemEntrega[]
+  devolucoes Devolucao[]
+}
+
+model ItemEntrega {
+  id                 Int     @id @default(autoincrement())
+  entregaId          Int
+  produtoId          Int
+  quantidadeEntregue Int
+  precoUnitario      Decimal @db.Decimal(10, 2)
+
+  entrega Entrega @relation(fields: [entregaId], references: [id], onDelete: Cascade)
+  produto Produto @relation(fields: [produtoId], references: [id])
+
+  itensDevolucao  ItemDevolucao[]
+  pagamentosItens PagamentoItem[]
+
+  @@unique([entregaId, produtoId])
+}
+
+model Devolucao {
+  id              Int      @id @default(autoincrement())
+  entregaId       Int
+  dataDevolucao   DateTime @default(now())
+  observacoes     String?
+  registradaPorId Int
+  registradaEm    DateTime @default(now())
+
+  entrega       Entrega @relation(fields: [entregaId], references: [id], onDelete: Cascade)
+  registradaPor Usuario @relation("DevolucaoRegistradaPor", fields: [registradaPorId], references: [id])
+
+  itens ItemDevolucao[]
+}
+
+model ItemDevolucao {
+  id                  Int     @id @default(autoincrement())
+  devolucaoId         Int
+  itemEntregaId       Int
+  quantidadeDevolvida Int
+  precoUnitario       Decimal @db.Decimal(10, 2)
+
+  devolucao   Devolucao   @relation(fields: [devolucaoId], references: [id], onDelete: Cascade)
+  itemEntrega ItemEntrega @relation(fields: [itemEntregaId], references: [id])
+
+  @@unique([devolucaoId, itemEntregaId])
+}
+
+model Pagamento {
+  id              Int             @id @default(autoincrement())
+  padariaId       Int
+  dataInicio      DateTime
+  dataFim         DateTime
+  valorDevido     Decimal         @db.Decimal(10, 2)
+  valorRecebido   Decimal?        @db.Decimal(10, 2)
+  status          StatusPagamento @default(PENDENTE)
+  divergencia     Boolean         @default(false)
+  dataPagamento   DateTime?
+  registradoPorId Int?
+  observacoes     String?
+  criadoEm        DateTime        @default(now())
+  atualizadoEm    DateTime        @updatedAt
+
+  padaria       Padaria  @relation(fields: [padariaId], references: [id])
+  registradoPor Usuario? @relation("PagamentoRegistradoPor", fields: [registradoPorId], references: [id])
+
+  itens PagamentoItem[]
+}
+
+model PagamentoItem {
+  id                Int     @id @default(autoincrement())
+  pagamentoId       Int
+  itemEntregaId     Int
+  quantidadeVendida Int
+  valorVendido      Decimal @db.Decimal(10, 2)
+  valorDevolvido    Decimal @db.Decimal(10, 2)
+  valorLiquido      Decimal @db.Decimal(10, 2)
+
+  pagamento   Pagamento   @relation(fields: [pagamentoId], references: [id], onDelete: Cascade)
+  itemEntrega ItemEntrega @relation(fields: [itemEntregaId], references: [id])
+
+  @@unique([pagamentoId, itemEntregaId])
+}
+
+model Historico {
+  id              Int           @id @default(autoincrement())
+  tabelaAfetada   String
+  registroId      Int?
+  acao            AcaoHistorico
+  dadosAnteriores Json?
+  dadosNovos      Json?
+  motivo          String?
+  realizadoPorId  Int?
+  realizadoEm     DateTime      @default(now())
+
+  realizadoPor Usuario? @relation("HistoricoRealizadoPor", fields: [realizadoPorId], references: [id])
+}
+
+model AcessoSistema {
+  id         Int      @id @default(autoincrement())
+  usuarioId  Int
+  dataHora   DateTime @default(now())
+  sucesso    Boolean
+  tentativas Int      @default(1)
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id])
 }
