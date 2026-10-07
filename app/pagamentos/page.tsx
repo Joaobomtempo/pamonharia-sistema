@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 type Padaria = {
   id: number;
@@ -35,19 +35,15 @@ type PagamentoItem = {
 
 type Pagamento = {
   id: number;
-  dataInicio: string;
-  dataFim: string;
+  periodoInicio: string;
+  periodoFim: string;
   valorDevido: string | number;
   valorRecebido: string | number | null;
+  possuiDivergencia: boolean;
   status: "PENDENTE" | "PAGO";
-  divergencia: boolean;
   dataPagamento: string | null;
-
-  padaria: {
-    id: number;
-    nome: string;
-  };
-
+  criadoEm?: string;
+  padaria: Padaria;
   itens: PagamentoItem[];
 };
 
@@ -56,56 +52,54 @@ export default function PagamentosPage() {
   const [pagamentos, setPagamentos] = useState<Pagamento[]>([]);
 
   const [padariaId, setPadariaId] = useState("");
-  const [dataInicio, setDataInicio] = useState("");
-  const [dataFim, setDataFim] = useState("");
+  const [periodoInicio, setPeriodoInicio] = useState("");
+  const [periodoFim, setPeriodoFim] = useState("");
 
   const [valoresRecebidos, setValoresRecebidos] = useState<
     Record<number, string>
   >({});
 
   const [carregando, setCarregando] = useState(false);
-  const [recebendoPagamentoId, setRecebendoPagamentoId] =
+  const [carregandoDados, setCarregandoDados] = useState(true);
+  const [pagamentoEmProcessamento, setPagamentoEmProcessamento] =
     useState<number | null>(null);
 
-  async function carregarPadarias() {
+  async function carregarDados() {
     try {
-      const resposta = await fetch("/api/padarias");
+      setCarregandoDados(true);
 
-      if (!resposta.ok) {
-        throw new Error("Erro ao buscar padarias.");
+      const [respostaPadarias, respostaPagamentos] =
+        await Promise.all([
+          fetch("/api/padarias"),
+          fetch("/api/pagamentos"),
+        ]);
+
+      if (!respostaPadarias.ok || !respostaPagamentos.ok) {
+        throw new Error("Erro ao carregar dados.");
       }
 
-      const dados = await resposta.json();
+      const [dadosPadarias, dadosPagamentos] =
+        await Promise.all([
+          respostaPadarias.json(),
+          respostaPagamentos.json(),
+        ]);
 
-      setPadarias(dados);
+      setPadarias(dadosPadarias);
+      setPagamentos(dadosPagamentos);
     } catch (erro) {
       console.error(erro);
-    }
-  }
-
-  async function carregarPagamentos() {
-    try {
-      const resposta = await fetch("/api/pagamentos");
-
-      if (!resposta.ok) {
-        throw new Error("Erro ao buscar pagamentos.");
-      }
-
-      const dados = await resposta.json();
-
-      setPagamentos(dados);
-    } catch (erro) {
-      console.error(erro);
+      alert("Não foi possível carregar os pagamentos.");
+    } finally {
+      setCarregandoDados(false);
     }
   }
 
   useEffect(() => {
-    carregarPadarias();
-    carregarPagamentos();
+    carregarDados();
   }, []);
 
   function formatarDinheiro(valor: string | number | null) {
-    if (valor === null) {
+    if (valor === null || valor === undefined) {
       return "Não informado";
     }
 
@@ -115,28 +109,65 @@ export default function PagamentosPage() {
     });
   }
 
-  function formatarData(data: string) {
+  function formatarData(data: string | null) {
+    if (!data) {
+      return "Não informado";
+    }
+
     return new Date(data).toLocaleDateString("pt-BR");
   }
 
-  function formatarDataHora(data: string | null) {
-    if (!data) {
-      return "-";
-    }
+  const pagamentosPendentes = useMemo(() => {
+    return pagamentos.filter(
+      (pagamento) => pagamento.status === "PENDENTE"
+    );
+  }, [pagamentos]);
 
-    return new Date(data).toLocaleString("pt-BR");
-  }
+  const pagamentosPagos = useMemo(() => {
+    return pagamentos.filter(
+      (pagamento) => pagamento.status === "PAGO"
+    );
+  }, [pagamentos]);
 
-  async function criarFechamento(evento: FormEvent) {
+  const totalDevido = useMemo(() => {
+    return pagamentos.reduce(
+      (total, pagamento) =>
+        total + Number(pagamento.valorDevido),
+      0
+    );
+  }, [pagamentos]);
+
+  const totalRecebido = useMemo(() => {
+    return pagamentos.reduce(
+      (total, pagamento) =>
+        total +
+        (pagamento.valorRecebido
+          ? Number(pagamento.valorRecebido)
+          : 0),
+      0
+    );
+  }, [pagamentos]);
+
+  async function criarPagamento(evento: FormEvent) {
     evento.preventDefault();
 
-    if (!padariaId || !dataInicio || !dataFim) {
-      alert("Informe a padaria e o período.");
+    if (!padariaId) {
+      alert("Selecione uma padaria.");
       return;
     }
 
-    if (dataInicio > dataFim) {
-      alert("A data inicial não pode ser posterior à data final.");
+    if (!periodoInicio || !periodoFim) {
+      alert("Informe o período completo.");
+      return;
+    }
+
+    if (
+      new Date(periodoInicio).getTime() >
+      new Date(periodoFim).getTime()
+    ) {
+      alert(
+        "A data inicial não pode ser posterior à data final."
+      );
       return;
     }
 
@@ -152,76 +183,71 @@ export default function PagamentosPage() {
 
         body: JSON.stringify({
           padariaId: Number(padariaId),
-          dataInicio,
-          dataFim,
+          periodoInicio,
+          periodoFim,
         }),
       });
 
       const dados = await resposta.json();
 
       if (!resposta.ok) {
-        alert(dados.erro || "Não foi possível criar o fechamento.");
+        alert(
+          dados.erro ||
+            "Não foi possível criar o fechamento."
+        );
         return;
       }
 
-      alert(
-        `Fechamento criado com sucesso!\n\nValor devido: ${formatarDinheiro(
-          dados.valorDevido
-        )}\nStatus: PENDENTE`
-      );
-
       setPadariaId("");
-      setDataInicio("");
-      setDataFim("");
+      setPeriodoInicio("");
+      setPeriodoFim("");
 
-      await carregarPagamentos();
+      await carregarDados();
+
+      alert("Fechamento financeiro criado com sucesso.");
     } catch (erro) {
       console.error(erro);
-
-      alert("Erro ao criar fechamento.");
+      alert("Erro ao criar fechamento financeiro.");
     } finally {
       setCarregando(false);
     }
   }
 
-  async function registrarRecebimento(pagamento: Pagamento) {
-    const valorDigitado = valoresRecebidos[pagamento.id];
+  async function registrarRecebimento(
+    pagamento: Pagamento
+  ) {
+    const valorTexto = valoresRecebidos[pagamento.id];
+
+    const valorRecebido = Number(
+      String(valorTexto || "").replace(",", ".")
+    );
 
     if (
-      valorDigitado === undefined ||
-      valorDigitado === "" ||
-      Number.isNaN(Number(valorDigitado))
+      !Number.isFinite(valorRecebido) ||
+      valorRecebido < 0
     ) {
-      alert("Informe o valor recebido.");
-      return;
-    }
-
-    const valorRecebido = Number(valorDigitado);
-
-    if (valorRecebido < 0) {
-      alert("O valor recebido não pode ser negativo.");
+      alert("Informe um valor recebido válido.");
       return;
     }
 
     const valorDevido = Number(pagamento.valorDevido);
 
-    const mensagemConfirmacao =
-      Math.abs(valorRecebido - valorDevido) > 0.009
-        ? `O valor recebido é diferente do valor devido.\n\nValor devido: ${formatarDinheiro(
-            valorDevido
-          )}\nValor recebido: ${formatarDinheiro(
-            valorRecebido
-          )}\n\nDeseja registrar mesmo assim?`
-        : `Confirmar recebimento de ${formatarDinheiro(valorRecebido)}?`;
+    if (valorRecebido !== valorDevido) {
+      const confirmar = window.confirm(
+        `O valor recebido (${formatarDinheiro(
+          valorRecebido
+        )}) é diferente do valor devido (${formatarDinheiro(
+          valorDevido
+        )}). Deseja registrar mesmo assim?`
+      );
 
-    const confirmou = window.confirm(mensagemConfirmacao);
-
-    if (!confirmou) {
-      return;
+      if (!confirmar) {
+        return;
+      }
     }
 
     try {
-      setRecebendoPagamentoId(pagamento.id);
+      setPagamentoEmProcessamento(pagamento.id);
 
       const resposta = await fetch("/api/pagamentos", {
         method: "PATCH",
@@ -239,82 +265,133 @@ export default function PagamentosPage() {
       const dados = await resposta.json();
 
       if (!resposta.ok) {
-        alert(dados.erro || "Não foi possível registrar o recebimento.");
+        alert(
+          dados.erro ||
+            "Não foi possível registrar o recebimento."
+        );
         return;
       }
 
-      if (dados.divergencia) {
-        alert(
-          `Recebimento registrado com divergência.\n\nValor devido: ${formatarDinheiro(
-            dados.valorDevido
-          )}\nValor recebido: ${formatarDinheiro(dados.valorRecebido)}`
-        );
-      } else {
-        alert("Recebimento registrado com sucesso.");
-      }
-
       setValoresRecebidos((estadoAnterior) => {
-        const novoEstado = { ...estadoAnterior };
-
-        delete novoEstado[pagamento.id];
-
-        return novoEstado;
+        const copia = { ...estadoAnterior };
+        delete copia[pagamento.id];
+        return copia;
       });
 
-      await carregarPagamentos();
+      await carregarDados();
+
+      alert("Recebimento registrado com sucesso.");
     } catch (erro) {
       console.error(erro);
-
       alert("Erro ao registrar recebimento.");
     } finally {
-      setRecebendoPagamentoId(null);
+      setPagamentoEmProcessamento(null);
     }
   }
 
   return (
-    <main className="min-h-screen bg-gray-100 p-6">
+    <main className="min-h-screen bg-slate-100 px-6 py-8">
       <div className="mx-auto max-w-6xl">
+        {/* Cabeçalho */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">
-            Pagamentos
-          </h1>
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-600 text-2xl text-white shadow-sm">
+              💰
+            </div>
 
-          <p className="mt-2 text-gray-600">
-            Faça o fechamento das entregas e registre os recebimentos das
-            padarias.
-          </p>
+            <div>
+              <h1 className="text-3xl font-bold text-slate-900">
+                Pagamentos
+              </h1>
+
+              <p className="mt-1 text-slate-600">
+                Realize fechamentos financeiros e registre os
+                valores recebidos das padarias parceiras.
+              </p>
+            </div>
+          </div>
         </div>
 
-        <section className="mb-8 rounded-2xl bg-white p-6 shadow-sm">
-          <div className="mb-6">
-            <h2 className="text-xl font-semibold text-gray-900">
-              Novo fechamento
+        {/* Indicadores */}
+        <section className="mb-8 grid gap-4 md:grid-cols-4">
+          <div className="rounded-2xl border border-amber-100 bg-amber-50 p-5 shadow-sm">
+            <p className="text-sm font-medium text-amber-700">
+              Pendentes
+            </p>
+
+            <p className="mt-2 text-3xl font-bold text-amber-900">
+              {pagamentosPendentes.length}
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-5 shadow-sm">
+            <p className="text-sm font-medium text-emerald-700">
+              Pagos
+            </p>
+
+            <p className="mt-2 text-3xl font-bold text-emerald-900">
+              {pagamentosPagos.length}
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-blue-100 bg-blue-50 p-5 shadow-sm">
+            <p className="text-sm font-medium text-blue-700">
+              Total devido
+            </p>
+
+            <p className="mt-2 text-2xl font-bold text-blue-900">
+              {formatarDinheiro(totalDevido)}
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-5 shadow-sm">
+            <p className="text-sm font-medium text-emerald-700">
+              Total recebido
+            </p>
+
+            <p className="mt-2 text-2xl font-bold text-emerald-900">
+              {formatarDinheiro(totalRecebido)}
+            </p>
+          </div>
+        </section>
+
+        {/* Novo fechamento */}
+        <section className="mb-8 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="bg-gradient-to-r from-emerald-600 to-green-700 px-6 py-5">
+            <h2 className="text-xl font-semibold text-white">
+              Novo fechamento financeiro
             </h2>
 
-            <p className="mt-1 text-sm text-gray-500">
-              Escolha a padaria e o período das entregas que serão incluídas no
-              fechamento.
+            <p className="mt-1 text-sm text-emerald-100">
+              Selecione a padaria e o período que será fechado.
             </p>
           </div>
 
           <form
-            onSubmit={criarFechamento}
-            className="grid gap-5 md:grid-cols-3"
+            onSubmit={criarPagamento}
+            className="grid gap-5 p-6 md:grid-cols-3"
           >
             <div>
-              <label className="mb-2 block text-sm font-medium text-gray-700">
+              <label className="mb-2 block text-sm font-semibold text-slate-700">
                 Padaria
               </label>
 
               <select
                 value={padariaId}
-                onChange={(evento) => setPadariaId(evento.target.value)}
-                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 outline-none focus:border-black"
+                onChange={(evento) =>
+                  setPadariaId(evento.target.value)
+                }
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100"
               >
-                <option value="">Selecione uma padaria</option>
+                <option value="">
+                  Selecione uma padaria
+                </option>
 
                 {padarias.map((padaria) => (
-                  <option key={padaria.id} value={padaria.id}>
+                  <option
+                    key={padaria.id}
+                    value={padaria.id}
+                  >
                     {padaria.nome}
                   </option>
                 ))}
@@ -322,28 +399,32 @@ export default function PagamentosPage() {
             </div>
 
             <div>
-              <label className="mb-2 block text-sm font-medium text-gray-700">
+              <label className="mb-2 block text-sm font-semibold text-slate-700">
                 Data inicial
               </label>
 
               <input
                 type="date"
-                value={dataInicio}
-                onChange={(evento) => setDataInicio(evento.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 outline-none focus:border-black"
+                value={periodoInicio}
+                onChange={(evento) =>
+                  setPeriodoInicio(evento.target.value)
+                }
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100"
               />
             </div>
 
             <div>
-              <label className="mb-2 block text-sm font-medium text-gray-700">
+              <label className="mb-2 block text-sm font-semibold text-slate-700">
                 Data final
               </label>
 
               <input
                 type="date"
-                value={dataFim}
-                onChange={(evento) => setDataFim(evento.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 outline-none focus:border-black"
+                value={periodoFim}
+                onChange={(evento) =>
+                  setPeriodoFim(evento.target.value)
+                }
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100"
               />
             </div>
 
@@ -351,141 +432,214 @@ export default function PagamentosPage() {
               <button
                 type="submit"
                 disabled={carregando}
-                className="rounded-lg bg-black px-5 py-3 font-medium text-white transition hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-xl bg-emerald-600 px-6 py-3 font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {carregando
                   ? "Criando fechamento..."
-                  : "Criar fechamento"}
+                  : "Criar fechamento financeiro"}
               </button>
             </div>
           </form>
         </section>
 
-        <section className="rounded-2xl bg-white p-6 shadow-sm">
-          <div className="mb-6">
-            <h2 className="text-xl font-semibold text-gray-900">
-              Histórico de pagamentos
+        {/* Histórico */}
+        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-200 px-6 py-5">
+            <h2 className="text-xl font-semibold text-slate-900">
+              Histórico financeiro
             </h2>
 
-            <p className="mt-1 text-sm text-gray-500">
-              Pagamentos pendentes aguardam o registro do valor recebido.
+            <p className="mt-1 text-sm text-slate-500">
+              Fechamentos e recebimentos registrados no sistema.
             </p>
           </div>
 
-          {pagamentos.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-gray-300 p-8 text-center text-gray-500">
-              Nenhum fechamento registrado.
+          {carregandoDados ? (
+            <div className="p-10 text-center text-slate-500">
+              Carregando pagamentos...
+            </div>
+          ) : pagamentos.length === 0 ? (
+            <div className="p-10 text-center">
+              <div className="mb-3 text-4xl">💰</div>
+
+              <p className="font-semibold text-slate-700">
+                Nenhum fechamento financeiro registrado.
+              </p>
+
+              <p className="mt-1 text-sm text-slate-500">
+                Crie o primeiro fechamento utilizando o
+                formulário acima.
+              </p>
             </div>
           ) : (
-            <div className="space-y-5">
-              {pagamentos.map((pagamento) => (
-                <article
-                  key={pagamento.id}
-                  className="rounded-xl border border-gray-200 p-5"
-                >
-                  <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
-                    <div>
-                      <div className="flex flex-wrap items-center gap-3">
-                        <h3 className="text-lg font-semibold text-gray-900">
-                          {pagamento.padaria.nome}
-                        </h3>
+            <div className="space-y-5 p-6">
+              {pagamentos.map((pagamento) => {
+                const pago = pagamento.status === "PAGO";
 
-                        <span
-                          className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                            pagamento.status === "PAGO"
-                              ? "bg-green-100 text-green-700"
-                              : "bg-yellow-100 text-yellow-700"
-                          }`}
-                        >
-                          {pagamento.status}
-                        </span>
+                return (
+                  <article
+                    key={pagamento.id}
+                    className={`overflow-hidden rounded-2xl border ${
+                      pagamento.possuiDivergencia
+                        ? "border-red-200"
+                        : pago
+                        ? "border-emerald-200"
+                        : "border-amber-200"
+                    }`}
+                  >
+                    {/* Cabeçalho do pagamento */}
+                    <div
+                      className={`p-5 ${
+                        pagamento.possuiDivergencia
+                          ? "bg-red-50"
+                          : pago
+                          ? "bg-emerald-50"
+                          : "bg-amber-50"
+                      }`}
+                    >
+                      <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-3">
+                            <h3 className="text-xl font-bold text-slate-900">
+                              {pagamento.padaria.nome}
+                            </h3>
 
-                        {pagamento.divergencia && (
-                          <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-700">
-                            Divergência
-                          </span>
-                        )}
+                            <span
+                              className={`rounded-full border px-3 py-1 text-xs font-bold ${
+                                pago
+                                  ? "border-emerald-200 bg-emerald-100 text-emerald-700"
+                                  : "border-amber-200 bg-amber-100 text-amber-700"
+                              }`}
+                            >
+                              {pagamento.status}
+                            </span>
+
+                            {pagamento.possuiDivergencia && (
+                              <span className="rounded-full border border-red-200 bg-red-100 px-3 py-1 text-xs font-bold text-red-700">
+                                DIVERGÊNCIA
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm text-slate-600">
+                            <span>
+                              Pagamento #{pagamento.id}
+                            </span>
+
+                            <span>
+                              Período:{" "}
+                              <strong>
+                                {formatarData(
+                                  pagamento.periodoInicio
+                                )}
+                              </strong>{" "}
+                              até{" "}
+                              <strong>
+                                {formatarData(
+                                  pagamento.periodoFim
+                                )}
+                              </strong>
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="text-left md:text-right">
+                          <p className="text-sm text-slate-500">
+                            Valor devido
+                          </p>
+
+                          <p className="text-3xl font-bold text-slate-900">
+                            {formatarDinheiro(
+                              pagamento.valorDevido
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Resumo */}
+                    <div className="grid gap-3 border-y border-slate-200 bg-white p-5 md:grid-cols-3">
+                      <div className="rounded-xl bg-blue-50 p-4">
+                        <p className="text-xs font-semibold uppercase text-blue-600">
+                          Valor devido
+                        </p>
+
+                        <p className="mt-1 text-xl font-bold text-blue-900">
+                          {formatarDinheiro(
+                            pagamento.valorDevido
+                          )}
+                        </p>
                       </div>
 
-                      <p className="mt-2 text-sm text-gray-500">
-                        Período: {formatarData(pagamento.dataInicio)} até{" "}
-                        {formatarData(pagamento.dataFim)}
-                      </p>
+                      <div
+                        className={`rounded-xl p-4 ${
+                          pagamento.possuiDivergencia
+                            ? "bg-red-50"
+                            : "bg-emerald-50"
+                        }`}
+                      >
+                        <p
+                          className={`text-xs font-semibold uppercase ${
+                            pagamento.possuiDivergencia
+                              ? "text-red-600"
+                              : "text-emerald-600"
+                          }`}
+                        >
+                          Valor recebido
+                        </p>
 
-                      <p className="mt-1 text-sm text-gray-500">
-                        Pagamento #{pagamento.id}
-                      </p>
+                        <p
+                          className={`mt-1 text-xl font-bold ${
+                            pagamento.possuiDivergencia
+                              ? "text-red-900"
+                              : "text-emerald-900"
+                          }`}
+                        >
+                          {formatarDinheiro(
+                            pagamento.valorRecebido
+                          )}
+                        </p>
+                      </div>
+
+                      <div className="rounded-xl bg-slate-100 p-4">
+                        <p className="text-xs font-semibold uppercase text-slate-500">
+                          Data do recebimento
+                        </p>
+
+                        <p className="mt-1 text-xl font-bold text-slate-800">
+                          {formatarData(
+                            pagamento.dataPagamento
+                          )}
+                        </p>
+                      </div>
                     </div>
 
-                    <div className="text-left md:text-right">
-                      <p className="text-sm text-gray-500">
-                        Valor devido
-                      </p>
-
-                      <p className="text-2xl font-bold text-gray-900">
-                        {formatarDinheiro(pagamento.valorDevido)}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="mt-5 grid gap-4 rounded-lg bg-gray-50 p-4 md:grid-cols-3">
-                    <div>
-                      <p className="text-xs font-medium uppercase text-gray-500">
-                        Valor recebido
-                      </p>
-
-                      <p className="mt-1 font-semibold text-gray-900">
-                        {formatarDinheiro(pagamento.valorRecebido)}
-                      </p>
-                    </div>
-
-                    <div>
-                      <p className="text-xs font-medium uppercase text-gray-500">
-                        Data do recebimento
-                      </p>
-
-                      <p className="mt-1 font-semibold text-gray-900">
-                        {formatarDataHora(pagamento.dataPagamento)}
-                      </p>
-                    </div>
-
-                    <div>
-                      <p className="text-xs font-medium uppercase text-gray-500">
-                        Quantidade de itens
-                      </p>
-
-                      <p className="mt-1 font-semibold text-gray-900">
-                        {pagamento.itens.length}
-                      </p>
-                    </div>
-                  </div>
-
-                  {pagamento.itens.length > 0 && (
-                    <div className="mt-5 overflow-x-auto">
-                      <table className="w-full min-w-[700px] text-left text-sm">
+                    {/* Itens */}
+                    <div className="overflow-x-auto p-5">
+                      <table className="w-full min-w-[850px] text-left text-sm">
                         <thead>
-                          <tr className="border-b border-gray-200 text-gray-500">
-                            <th className="pb-3 pr-4 font-medium">
+                          <tr className="border-b border-slate-200 text-slate-500">
+                            <th className="pb-3 pr-4 font-semibold">
                               Entrega
                             </th>
 
-                            <th className="pb-3 pr-4 font-medium">
+                            <th className="pb-3 pr-4 font-semibold">
                               Produto
                             </th>
 
-                            <th className="pb-3 pr-4 font-medium">
+                            <th className="pb-3 pr-4 font-semibold">
                               Vendido
                             </th>
 
-                            <th className="pb-3 pr-4 font-medium">
+                            <th className="pb-3 pr-4 font-semibold">
                               Bruto
                             </th>
 
-                            <th className="pb-3 pr-4 font-medium">
+                            <th className="pb-3 pr-4 font-semibold">
                               Devolvido
                             </th>
 
-                            <th className="pb-3 font-medium">
+                            <th className="pb-3 font-semibold">
                               Líquido
                             </th>
                           </tr>
@@ -495,83 +649,136 @@ export default function PagamentosPage() {
                           {pagamento.itens.map((item) => (
                             <tr
                               key={item.id}
-                              className="border-b border-gray-100"
+                              className="border-b border-slate-100"
                             >
-                              <td className="py-3 pr-4 text-gray-700">
-                                {item.itemEntrega.entrega.codigo}
+                              <td className="py-3 pr-4 text-slate-600">
+                                {
+                                  item.itemEntrega.entrega
+                                    .codigo
+                                }
                               </td>
 
-                              <td className="py-3 pr-4 text-gray-700">
-                                {item.itemEntrega.produto.nome}
+                              <td className="py-3 pr-4 font-semibold text-slate-800">
+                                {
+                                  item.itemEntrega.produto
+                                    .nome
+                                }
                               </td>
 
-                              <td className="py-3 pr-4 text-gray-700">
+                              <td className="py-3 pr-4 text-slate-600">
                                 {item.quantidadeVendida}
                               </td>
 
-                              <td className="py-3 pr-4 text-gray-700">
-                                {formatarDinheiro(item.valorVendido)}
+                              <td className="py-3 pr-4 text-blue-700">
+                                {formatarDinheiro(
+                                  item.valorVendido
+                                )}
                               </td>
 
-                              <td className="py-3 pr-4 text-gray-700">
-                                {formatarDinheiro(item.valorDevolvido)}
+                              <td className="py-3 pr-4 text-red-600">
+                                -
+                                {formatarDinheiro(
+                                  item.valorDevolvido
+                                )}
                               </td>
 
-                              <td className="py-3 font-semibold text-gray-900">
-                                {formatarDinheiro(item.valorLiquido)}
+                              <td className="py-3 font-bold text-emerald-700">
+                                {formatarDinheiro(
+                                  item.valorLiquido
+                                )}
                               </td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
-                  )}
 
-                  {pagamento.status === "PENDENTE" && (
-                    <div className="mt-6 border-t border-gray-200 pt-5">
-                      <h4 className="font-semibold text-gray-900">
-                        Registrar recebimento
-                      </h4>
+                    {/* Recebimento */}
+                    {!pago && (
+                      <div className="border-t border-amber-200 bg-amber-50 p-5">
+                        <h4 className="font-bold text-amber-900">
+                          Registrar recebimento
+                        </h4>
 
-                      <p className="mt-1 text-sm text-gray-500">
-                        Informe quanto a padaria realmente pagou.
-                      </p>
+                        <p className="mt-1 text-sm text-amber-800">
+                          Informe o valor efetivamente pago pela
+                          padaria.
+                        </p>
 
-                      <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          placeholder="Valor recebido"
-                          value={valoresRecebidos[pagamento.id] ?? ""}
-                          onChange={(evento) =>
-                            setValoresRecebidos((estadoAnterior) => ({
-                              ...estadoAnterior,
-                              [pagamento.id]: evento.target.value,
-                            }))
-                          }
-                          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 outline-none focus:border-black sm:max-w-xs"
-                        />
+                        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+                          <div className="w-full sm:max-w-xs">
+                            <label className="mb-2 block text-sm font-semibold text-slate-700">
+                              Valor recebido
+                            </label>
 
-                        <button
-                          type="button"
-                          disabled={
-                            recebendoPagamentoId === pagamento.id
-                          }
-                          onClick={() =>
-                            registrarRecebimento(pagamento)
-                          }
-                          className="rounded-lg bg-green-600 px-5 py-2 font-medium text-white transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {recebendoPagamentoId === pagamento.id
-                            ? "Registrando..."
-                            : "Registrar recebimento"}
-                        </button>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={
+                                valoresRecebidos[
+                                  pagamento.id
+                                ] || ""
+                              }
+                              onChange={(evento) =>
+                                setValoresRecebidos(
+                                  (estadoAnterior) => ({
+                                    ...estadoAnterior,
+                                    [pagamento.id]:
+                                      evento.target.value,
+                                  })
+                                )
+                              }
+                              placeholder="Ex.: 90.00"
+                              className="w-full rounded-xl border border-amber-300 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-amber-500 focus:ring-4 focus:ring-amber-100"
+                            />
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              registrarRecebimento(
+                                pagamento
+                              )
+                            }
+                            disabled={
+                              pagamentoEmProcessamento ===
+                              pagamento.id
+                            }
+                            className="rounded-xl bg-emerald-600 px-6 py-3 font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {pagamentoEmProcessamento ===
+                            pagamento.id
+                              ? "Registrando..."
+                              : "Registrar recebimento"}
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </article>
-              ))}
+                    )}
+
+                    {pago && (
+                      <div className="border-t border-emerald-100 bg-emerald-50 px-5 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-600 text-white">
+                            ✓
+                          </div>
+
+                          <div>
+                            <p className="font-bold text-emerald-900">
+                              Pagamento concluído
+                            </p>
+
+                            <p className="text-sm text-emerald-700">
+                              Este fechamento já possui
+                              recebimento registrado.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </article>
+                );
+              })}
             </div>
           )}
         </section>
