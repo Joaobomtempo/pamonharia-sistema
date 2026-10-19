@@ -1,83 +1,208 @@
+
 import { NextResponse } from "next/server";
 import { prisma } from "../../../lib/prisma";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   try {
-    const hoje = new Date();
+    // Dia atual no horário de Brasília
+    const dataBrasil = new Intl.DateTimeFormat("sv-SE", {
+      timeZone: "America/Sao_Paulo",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
 
-    hoje.setHours(0, 0, 0, 0);
+    const inicioDia = new Date(`${dataBrasil}T03:00:00.000Z`);
+    const fimDia = new Date(inicioDia.getTime() + 86400000);
 
     const [
-      entregasHoje,
+      movimentacoesHoje,
+      ultimasEntregas,
+      quantidadePendente,
       pagamentosPendentes,
-      padarias,
-      produtos,
+      todosPagamentosPendentes,
+      totalPadarias,
+      totalProdutos,
+      entregasParaRanking,
     ] = await Promise.all([
-      prisma.entrega.findMany({
+      prisma.entrega.count({
         where: {
           dataEntrega: {
-            gte: hoje,
+            gte: inicioDia,
+            lt: fimDia,
           },
         },
+      }),
+
+      prisma.entrega.findMany({
+        take: 8,
+        orderBy: [
+          { dataEntrega: "desc" },
+          { id: "desc" },
+        ],
         include: {
-          itens: true,
+          padaria: {
+            select: {
+              id: true,
+              nome: true,
+            },
+          },
+          itens: {
+            select: {
+              quantidadeEntregue: true,
+              precoUnitario: true,
+            },
+          },
         },
+      }),
+
+      prisma.pagamento.count({
+        where: { status: "PENDENTE" },
       }),
 
       prisma.pagamento.findMany({
-        where: {
-          status: "PENDENTE",
+        where: { status: "PENDENTE" },
+        take: 8,
+        orderBy: { criadoEm: "desc" },
+        include: {
+          padaria: {
+            select: {
+              id: true,
+              nome: true,
+            },
+          },
         },
       }),
 
-      prisma.padaria.findMany(),
+      prisma.pagamento.aggregate({
+        where: { status: "PENDENTE" },
+        _sum: {
+          valorDevido: true,
+        },
+      }),
 
-      prisma.produto.findMany(),
+      prisma.padaria.count(),
+
+      prisma.produto.count(),
+
+      prisma.entrega.findMany({
+        select: {
+          padariaId: true,
+          padaria: {
+            select: {
+              nome: true,
+            },
+          },
+          itens: {
+            select: {
+              quantidadeEntregue: true,
+              precoUnitario: true,
+            },
+          },
+        },
+      }),
     ]);
 
-    let valorReceber = 0;
+    // Converte valores Decimal do Prisma para number
+    const ultimasMovimentacoes = ultimasEntregas.map(
+      (entrega) => {
+        const valorTotalEntregue = entrega.itens.reduce(
+          (total, item) =>
+            total +
+            item.quantidadeEntregue *
+              Number(item.precoUnitario),
+          0
+        );
 
-    let quantidadeEntregas = 0;
-
-    for (const entrega of entregasHoje) {
-      quantidadeEntregas++;
-
-      for (const item of entrega.itens) {
-        valorReceber +=
-          item.quantidadeEntregue *
-          Number(item.precoUnitario);
+        return {
+          id: entrega.id,
+          codigo: entrega.codigo,
+          dataEntrega: entrega.dataEntrega,
+          status: entrega.status,
+          padaria: entrega.padaria,
+          valorTotalEntregue: Number(
+            valorTotalEntregue.toFixed(2)
+          ),
+        };
       }
+    );
+
+    // Ranking por valor bruto entregue
+    const mapaPadarias = new Map<
+      number,
+      {
+        id: number;
+        nome: string;
+        valorEntregue: number;
+        totalEntregas: number;
+      }
+    >();
+
+    for (const entrega of entregasParaRanking) {
+      const valorEntrega = entrega.itens.reduce(
+        (total, item) =>
+          total +
+          item.quantidadeEntregue *
+            Number(item.precoUnitario),
+        0
+      );
+
+      const anterior = mapaPadarias.get(entrega.padariaId);
+
+      mapaPadarias.set(entrega.padariaId, {
+        id: entrega.padariaId,
+        nome: entrega.padaria.nome,
+        valorEntregue:
+          (anterior?.valorEntregue ?? 0) + valorEntrega,
+        totalEntregas:
+          (anterior?.totalEntregas ?? 0) + 1,
+      });
     }
+
+    const rankingPadarias = Array.from(mapaPadarias.values())
+      .sort((a, b) => b.valorEntregue - a.valorEntregue)
+      .slice(0, 5)
+      .map((item) => ({
+        ...item,
+        valorEntregue: Number(
+          item.valorEntregue.toFixed(2)
+        ),
+      }));
 
     return NextResponse.json({
       indicadores: {
-        movimentacoesHoje: quantidadeEntregas,
-
-        valorReceber,
-
-        pagamentosPendentes:
-          pagamentosPendentes.length,
-
-        totalPadarias: padarias.length,
-
-        totalProdutos: produtos.length,
+        movimentacoesHoje,
+        valorReceber: Number(
+          todosPagamentosPendentes._sum.valorDevido ?? 0
+        ),
+        pagamentosPendentes: quantidadePendente,
+        totalPadarias,
+        totalProdutos,
       },
 
-      entregasHoje,
+      ultimasMovimentacoes,
 
-      pagamentosPendentes,
+      pagamentosPendentes: pagamentosPendentes.map(
+        (pagamento) => ({
+          id: pagamento.id,
+          padaria: pagamento.padaria,
+          valorDevido: Number(pagamento.valorDevido),
+          dataInicio: pagamento.dataInicio,
+          dataFim: pagamento.dataFim,
+          status: pagamento.status,
+        })
+      ),
+
+      rankingPadarias,
     });
   } catch (error) {
-    console.error(error);
+    console.error("Erro no Dashboard:", error);
 
     return NextResponse.json(
-      {
-        erro:
-          "Erro ao carregar dashboard.",
-      },
-      {
-        status: 500,
-      }
+      { erro: "Não foi possível carregar o Dashboard." },
+      { status: 500 }
     );
   }
 }
