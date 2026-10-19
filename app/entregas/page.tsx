@@ -555,121 +555,60 @@ export default function EntregasPage() {
     try {
       setCarregando(true);
 
-      /*
-       * ETAPA 1
-       * Registra a devolução da entrega anterior,
-       * caso exista alguma quantidade devolvida.
-       */
-      const devolucoesValidas =
-        itensDevolucao.filter(
-          (item) =>
-            Number(
-              item.quantidadeDevolvida
-            ) > 0
-        );
+      // A entrega, a devolução e o acerto são gravados juntos no servidor.
+      // Caso uma etapa falhe, a transação é revertida integralmente.
+      const devolucoesValidas = itensDevolucao.filter(
+        (item) => Number(item.quantidadeDevolvida) > 0
+      );
 
-      if (
-        entregaAnterior &&
-        devolucoesValidas.length > 0
-      ) {
-        const respostaDevolucao =
-          await fetch("/api/devolucoes", {
-            method: "POST",
+      const resposta = await fetch("/api/movimentacoes", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          padariaId: Number(padariaId),
+          dataEntrega,
+          observacoes: observacoes.trim() || null,
+          itensEntrega: itensEntrega.map((item) => ({
+            produtoId: Number(item.produtoId),
+            quantidadeEntregue: Number(item.quantidadeEntregue),
+            precoUnitario: Number(
+              String(item.precoUnitario).replace(",", ".")
+            ),
+          })),
+          devolucao:
+            entregaAnterior && devolucoesValidas.length > 0
+              ? {
+                  entregaId: entregaAnterior.id,
+                  observacoes: `Devolução registrada junto à movimentação de ${dataEntrega}.`,
+                  itens: devolucoesValidas.map((item) => ({
+                    itemEntregaId: item.itemEntregaId,
+                    quantidadeDevolvida: Number(item.quantidadeDevolvida),
+                  })),
+                }
+              : null,
+        }),
+      });
 
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
+      const dados = await resposta.json();
 
-            body: JSON.stringify({
-              entregaId: entregaAnterior.id,
-
-              observacoes:
-                `Devolução registrada junto à movimentação de ${dataEntrega}.`,
-
-              itens: devolucoesValidas.map(
-                (item) => ({
-                  itemEntregaId:
-                    item.itemEntregaId,
-
-                  quantidadeDevolvida:
-                    Number(
-                      item.quantidadeDevolvida
-                    ),
-                })
-              ),
-            }),
-          });
-
-        const dadosDevolucao =
-          await respostaDevolucao.json();
-
-        if (!respostaDevolucao.ok) {
-          alert(
-            dadosDevolucao.erro ||
-              "Não foi possível registrar a devolução."
-          );
-
-          return;
-        }
+      if (!resposta.ok) {
+        alert(dados.erro || "Não foi possível registrar a movimentação.");
+        return;
       }
 
-      /*
-       * ETAPA 2
-       * Registra a nova entrega de hoje.
-       */
-      const respostaEntrega =
-        await fetch("/api/entregas", {
-          method: "POST",
-
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
-
-          body: JSON.stringify({
-            padariaId: Number(padariaId),
-            dataEntrega,
-
-            observacoes:
-              observacoes.trim() || null,
-
-            itens: itensEntrega.map(
-              (item) => ({
-                produtoId: Number(
-                  item.produtoId
-                ),
-
-                quantidadeEntregue:
-                  Number(
-                    item.quantidadeEntregue
-                  ),
-
-                precoUnitario: Number(
-                  String(
-                    item.precoUnitario
-                  ).replace(",", ".")
-                ),
-              })
-            ),
-          }),
-        });
-
-      const dadosEntrega =
-        await respostaEntrega.json();
-
-      if (!respostaEntrega.ok) {
+      if (!dados.acerto?.id) {
         alert(
-          dadosEntrega.erro ||
-            "A devolução foi registrada, mas ocorreu um erro ao registrar a nova entrega. Não tente repetir a devolução antes de verificar os dados."
+          "A movimentação foi registrada, mas o servidor não retornou o acerto financeiro. Verifique os registros antes de tentar novamente."
         );
-
+        await carregarDados();
         return;
       }
 
       alert(
         `Movimentação registrada com sucesso!\n\nValor do acerto: ${formatarDinheiro(
-          resumoMovimentacao.valorDevido
+          dados.acerto.valorDevido
         )}`
       );
 

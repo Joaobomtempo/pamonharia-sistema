@@ -722,6 +722,26 @@ export async function POST(request: Request) {
             );
 
           /*
+           * ========================================
+           * 4. GRAVA O ACERTO NA MESMA TRANSAÇÃO
+           * ========================================
+           * A devolução usa o preço da nova entrega,
+           * conforme a regra de consignação.
+           * O acerto é criado mesmo sem devolução.
+           */
+          const acerto = await tx.acertoMovimentacao.create({
+            data: {
+              entregaId: novaEntrega.id,
+              devolucaoId: novaDevolucao?.id ?? null,
+              quantidadeEntregue,
+              quantidadeDevolvida,
+              valorBruto: valorBruto.toFixed(2),
+              valorDevolvido: valorDevolvido.toFixed(2),
+              valorDevido: valorDevido.toFixed(2),
+            },
+          });
+
+          /*
            * Tudo será retornado para a tela.
            */
           return {
@@ -729,6 +749,8 @@ export async function POST(request: Request) {
 
             devolucao:
               novaDevolucao,
+
+            acerto,
 
             resumo: {
               quantidadeEntregue,
