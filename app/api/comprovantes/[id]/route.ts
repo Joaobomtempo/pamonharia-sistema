@@ -15,8 +15,14 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const sessao = token ? await validarToken(token) : null;
     if (!sessao) return NextResponse.json({ erro: "Autenticação necessária." }, { status: 401 });
     if (sessao.tipo === "DESENVOLVEDOR") return NextResponse.json({ erro: "Acesso não autorizado." }, { status: 403 });
-    const usuario = await prisma.usuario.findUnique({ where: { id: sessao.id }, select: { status: true, tipo: true } });
-    if (!usuario || usuario.status !== "ATIVO" || usuario.tipo !== sessao.tipo) {
+    const usuario = await prisma.usuario.findUnique({ where: { id: sessao.id }, select: { usuario: true, status: true, tipo: true } });
+    if (
+  !usuario ||
+  usuario.status !== "ATIVO" ||
+  usuario.tipo !== sessao.tipo ||
+  usuario.usuario !== sessao.usuario ||
+  !["DONO", "FUNCIONARIO"].includes(usuario.tipo)
+) {
       return NextResponse.json({ erro: "Sessão sem autorização." }, { status: 403 });
     }
 
