@@ -16,13 +16,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     if (!sessao) return NextResponse.json({ erro: "Autenticação necessária." }, { status: 401 });
     if (sessao.tipo === "DESENVOLVEDOR") return NextResponse.json({ erro: "Acesso não autorizado." }, { status: 403 });
     const usuario = await prisma.usuario.findUnique({ where: { id: sessao.id }, select: { usuario: true, status: true, tipo: true } });
-    if (
-  !usuario ||
-  usuario.status !== "ATIVO" ||
-  usuario.tipo !== sessao.tipo ||
-  usuario.usuario !== sessao.usuario ||
-  !["DONO", "FUNCIONARIO"].includes(usuario.tipo)
-) {
+    if (!usuario || usuario.status !== "ATIVO" || usuario.tipo !== sessao.tipo || usuario.usuario !== sessao.usuario || !["DONO", "FUNCIONARIO"].includes(usuario.tipo)) {
       return NextResponse.json({ erro: "Sessão sem autorização." }, { status: 403 });
     }
 
@@ -45,6 +39,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       },
     });
     if (!acerto) return NextResponse.json({ erro: "Acerto não encontrado para esta entrega." }, { status: 404 });
+
+    if (acerto.entrega.canceladoEm) return NextResponse.json({ erro: "Movimentação cancelada. Não é possível gerar comprovante válido." }, { status: 410 });
 
     const pdf = await PDFDocument.create();
     const normal = await pdf.embedFont(StandardFonts.Helvetica);

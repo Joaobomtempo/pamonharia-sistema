@@ -1,277 +1,73 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "../../../lib/prisma";
+import { autorizarUsuario } from "../../../lib/autorizarUsuario";
 
-export async function GET() {
-  const devolucoes = await prisma.devolucao.findMany({
-    include: {
-      entrega: {
-        include: {
-          padaria: true,
-        },
-      },
-      itens: {
-        include: {
-          itemEntrega: {
-            include: {
-              produto: true,
-            },
+export const dynamic = "force-dynamic";
+
+const respostaErro = (erro: string, status = 400) =>
+  NextResponse.json({ erro }, { status, headers: { "Cache-Control": "private, no-store" } });
+
+/**
+ * Consulta historica de devolucoes sem expor credenciais dos usuarios.
+ * Registros cancelados permanecem disponiveis para rastreabilidade.
+ */
+export async function GET(request: NextRequest) {
+  try {
+    const acesso = await autorizarUsuario(request, ["DONO", "FUNCIONARIO"]);
+    if (!acesso.ok) return respostaErro(acesso.erro, acesso.status);
+
+    const devolucoes = await prisma.devolucao.findMany({
+      include: {
+        entrega: {
+          include: {
+            padaria: true,
           },
         },
-      },
-      registradaPor: true,
-    },
-    orderBy: {
-      dataDevolucao: "desc",
-    },
-  });
-
-  return NextResponse.json(devolucoes);
-}
-
-export async function POST(request: Request) {
-  try {
-    const body = await request.json();
-
-    const entregaId = Number(body.entregaId);
-
-    if (
-      !entregaId ||
-      !Array.isArray(body.itens) ||
-      body.itens.length === 0
-    ) {
-      return NextResponse.json(
-        {
-          erro:
-            "Informe a entrega e pelo menos um produto devolvido.",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
-    const usuario = await prisma.usuario.findFirst();
-
-    if (!usuario) {
-      return NextResponse.json(
-        {
-          erro: "Nenhum usuário cadastrado.",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
-    const entrega = await prisma.entrega.findUnique({
-      where: {
-        id: entregaId,
-      },
-
-      include: {
         itens: {
           include: {
-            itensDevolucao: true,
-            pagamentosItens: true,
+            itemEntrega: {
+              include: {
+                produto: true,
+              },
+            },
+          },
+        },
+        registradaPor: {
+          select: {
+            id: true,
+            nomeCompleto: true,
+            usuario: true,
           },
         },
       },
+      orderBy: [{ dataDevolucao: "desc" }, { id: "desc" }],
     });
 
-    if (!entrega) {
-      return NextResponse.json(
-        {
-          erro: "Entrega não encontrada.",
-        },
-        {
-          status: 404,
-        }
-      );
-    }
+    return NextResponse.json(devolucoes, {
+      headers: { "Cache-Control": "private, no-store" },
+    });
+  } catch (erro) {
+    console.error("Erro ao consultar devolucoes:", erro);
+    return respostaErro("Nao foi possivel consultar as devolucoes.", 500);
+  }
+}
 
-    /*
-      Se qualquer item da entrega já estiver
-      vinculado a um pagamento, a entrega é
-      considerada financeiramente fechada.
-    */
-    const possuiPagamento = entrega.itens.some(
-      (item) => item.pagamentosItens.length > 0
-    );
+/**
+ * A criacao direta anterior podia gerar devolucoes sem atualizar o acerto.
+ * Novos registros devem passar pela API transacional de devolucao complementar
+ * ou pela API de movimentacoes, conforme o fluxo de negocio.
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const acesso = await autorizarUsuario(request, ["DONO", "FUNCIONARIO"]);
+    if (!acesso.ok) return respostaErro(acesso.erro, acesso.status);
 
-    if (possuiPagamento) {
-      return NextResponse.json(
-        {
-          erro:
-            "Não é possível registrar devolução. Esta entrega já está vinculada a um pagamento.",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
-    for (const itemRecebido of body.itens) {
-      const itemEntregaId = Number(
-        itemRecebido.itemEntregaId
-      );
-
-      const quantidadeDevolvida = Number(
-        itemRecebido.quantidadeDevolvida
-      );
-
-      const itemEntrega = entrega.itens.find(
-        (item) => item.id === itemEntregaId
-      );
-
-      if (!itemEntrega) {
-        return NextResponse.json(
-          {
-            erro:
-              "Um dos produtos não pertence a esta entrega.",
-          },
-          {
-            status: 400,
-          }
-        );
-      }
-
-      if (
-        !Number.isInteger(quantidadeDevolvida) ||
-        quantidadeDevolvida <= 0
-      ) {
-        return NextResponse.json(
-          {
-            erro:
-              "A quantidade devolvida deve ser um número inteiro maior que zero.",
-          },
-          {
-            status: 400,
-          }
-        );
-      }
-
-      const totalJaDevolvido =
-        itemEntrega.itensDevolucao.reduce(
-          (total, devolucao) =>
-            total +
-            devolucao.quantidadeDevolvida,
-          0
-        );
-
-      const quantidadeDisponivel =
-        itemEntrega.quantidadeEntregue -
-        totalJaDevolvido;
-
-      if (
-        quantidadeDevolvida >
-        quantidadeDisponivel
-      ) {
-        return NextResponse.json(
-          {
-            erro: `Não é possível devolver ${quantidadeDevolvida} unidade(s). Restam apenas ${quantidadeDisponivel} unidade(s) disponíveis para devolução.`,
-          },
-          {
-            status: 400,
-          }
-        );
-      }
-    }
-
-    const devolucao = await prisma.$transaction(
-      async (tx) => {
-        const novaDevolucao =
-          await tx.devolucao.create({
-            data: {
-              entregaId,
-              registradaPorId: usuario.id,
-              observacoes:
-                body.observacoes || null,
-
-              itens: {
-                create: body.itens.map(
-                  (itemRecebido: {
-                    itemEntregaId: number;
-                    quantidadeDevolvida: number;
-                  }) => {
-                    const itemEntrega =
-                      entrega.itens.find(
-                        (item) =>
-                          item.id ===
-                          Number(
-                            itemRecebido.itemEntregaId
-                          )
-                      );
-
-                    if (!itemEntrega) {
-                      throw new Error(
-                        "Item da entrega não encontrado."
-                      );
-                    }
-
-                    return {
-                      itemEntregaId: Number(
-                        itemRecebido.itemEntregaId
-                      ),
-
-                      quantidadeDevolvida:
-                        Number(
-                          itemRecebido.quantidadeDevolvida
-                        ),
-
-                      precoUnitario:
-                        itemEntrega.precoUnitario,
-                    };
-                  }
-                ),
-              },
-            },
-
-            include: {
-              itens: {
-                include: {
-                  itemEntrega: {
-                    include: {
-                      produto: true,
-                    },
-                  },
-                },
-              },
-            },
-          });
-
-        await tx.entrega.update({
-          where: {
-            id: entregaId,
-          },
-          data: {
-            status: "COM_DEVOLUCAO",
-          },
-        });
-
-        return novaDevolucao;
-      }
-    );
-
-    return NextResponse.json(
-      devolucao,
-      {
-        status: 201,
-      }
+    return respostaErro(
+      "O cadastro antigo de devolucoes foi desativado para proteger os acertos financeiros. Utilize a tela Devolucoes (registro complementar) ou registre a devolucao junto da nova movimentacao.",
+      409
     );
   } catch (erro) {
-    console.error(
-      "Erro ao registrar devolução:",
-      erro
-    );
-
-    return NextResponse.json(
-      {
-        erro:
-          "Erro interno ao registrar devolução.",
-      },
-      {
-        status: 500,
-      }
-    );
+    console.error("Erro ao validar cadastro antigo de devolucao:", erro);
+    return respostaErro("Erro interno ao validar a operacao.", 500);
   }
 }

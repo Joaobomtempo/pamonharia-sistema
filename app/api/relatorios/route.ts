@@ -20,7 +20,7 @@ function reais(valor: number): number {
 
 function csvCell(value: unknown): string {
   const text = String(value ?? "");
-  // Prevent spreadsheet formula injection in exported cells.
+  // Impede injeção de fórmulas quando o CSV é aberto numa planilha.
   const safe = /^[\s]*[=+\-@]/.test(text) ? `'${text}` : text;
   return `"${safe.replace(/"/g, '""')}"`;
 }
@@ -43,14 +43,18 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ erro: "Padaria inválida." }, { status: 400 });
     }
 
+    // Acertos só entram nos relatórios quando sua entrega está ativa.
     const where = {
-      ...(padariaId ? { entrega: { padariaId } } : {}),
-      ...((inicio || fim) ? {
-        entrega: {
-          ...(padariaId ? { padariaId } : {}),
-          dataEntrega: { ...(inicio ? { gte: inicio } : {}), ...(fim ? { lte: fim } : {}) },
-        },
-      } : {}),
+      entrega: {
+        canceladoEm: null,
+        ...(padariaId ? { padariaId } : {}),
+        ...(inicio || fim ? {
+          dataEntrega: {
+            ...(inicio ? { gte: inicio } : {}),
+            ...(fim ? { lte: fim } : {}),
+          },
+        } : {}),
+      },
     };
 
     const acertos = await prisma.acertoMovimentacao.findMany({
@@ -100,10 +104,13 @@ export async function GET(request: NextRequest) {
     }
     const ranking = Array.from(porPadaria.values()).map((p) => ({ padariaId: p.padariaId, nome: p.nome, movimentacoes: p.movimentacoes, devido: reais(p.devidoCentavos), devolucoes: reais(p.devolvidoCentavos) })).sort((a, b) => b.devido - a.devido);
 
-    // Payments are filtered by settlement period, independently from individual
-    // movement filters, so the totals refer to financial closures in the selected period.
+    // Fechamentos financeiros mantêm seu próprio período e histórico.
+    // Cancelamento de uma entrega já vinculada a um fechamento é bloqueado pela API de cancelamento.
     const pagamentos = await prisma.pagamento.findMany({
       where: {
+        // Fechamentos cancelados são preservados no Histórico Financeiro,
+        // mas não fazem parte dos indicadores financeiros operacionais.
+        status: { in: ["PENDENTE", "PAGO"] },
         ...(padariaId ? { padariaId } : {}),
         ...(inicio || fim ? { dataInicio: { ...(fim ? { lte: fim } : {}) }, dataFim: { ...(inicio ? { gte: inicio } : {}) } } : {}),
       },
@@ -125,7 +132,7 @@ export async function GET(request: NextRequest) {
       return new NextResponse(csv, { headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": 'attachment; filename="relatorio-pamonharia.csv"', "Cache-Control": "no-store" } });
     }
 
-    return NextResponse.json({ totais, financeiro, ranking, detalhes, observacao: "Valores operacionais baseados em acertos registrados. Entregas sem acerto não entram no relatório." });
+    return NextResponse.json({ totais, financeiro, ranking, detalhes, observacao: "Valores operacionais baseados em acertos registrados de entregas não canceladas. Entregas sem acerto não entram no relatório." });
   } catch (erro) {
     console.error("Erro ao gerar relatório:", erro);
     return NextResponse.json({ erro: "Não foi possível gerar o relatório." }, { status: 500 });

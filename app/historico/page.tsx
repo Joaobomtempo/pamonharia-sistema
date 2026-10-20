@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowDownToLine, CalendarDays, ClipboardList, RefreshCw, Search } from "lucide-react";
+import { ArrowDownToLine, CalendarDays, ClipboardList, RefreshCw, Search, Ban, X } from "lucide-react";
 
 type Padaria = { id: number; nome: string };
 type ItemEntrega = {
@@ -17,6 +17,8 @@ type Entrega = {
   codigo: string;
   dataEntrega: string;
   status: string;
+  canceladoEm?: string | null;
+  motivoCancelamento?: string | null;
   padaria: Padaria;
   itens: ItemEntrega[];
 };
@@ -44,6 +46,11 @@ export default function HistoricoPage() {
   const [inicio, setInicio] = useState("");
   const [fim, setFim] = useState("");
   const [pagina, setPagina] = useState(1);
+  const [cancelando, setCancelando] = useState<Entrega | null>(null);
+  const [motivo, setMotivo] = useState("");
+  const [enviando, setEnviando] = useState(false);
+  const [erroCancelamento, setErroCancelamento] = useState("");
+  const [aviso, setAviso] = useState("");
   const porPagina = 15;
 
   const carregar = useCallback(async () => {
@@ -51,7 +58,7 @@ export default function HistoricoPage() {
     setErro("");
     try {
       const [resEntregas, resPadarias] = await Promise.all([
-        fetch("/api/entregas", { cache: "no-store" }),
+        fetch("/api/entregas?incluirCanceladas=1", { cache: "no-store" }),
         fetch("/api/padarias", { cache: "no-store" }),
       ]);
       if (!resEntregas.ok || !resPadarias.ok) throw new Error("Não foi possível consultar o histórico.");
@@ -67,7 +74,48 @@ export default function HistoricoPage() {
   }, []);
 
   useEffect(() => { void carregar(); }, [carregar]);
+  useEffect(() => {
+    // Os cartões do Dashboard usam ?busca=; mantém compatibilidade com ?codigo=.
+    const aplicarFiltroDaUrl = () => {
+      const parametros = new URLSearchParams(window.location.search);
+      setBusca(parametros.get("busca") ?? parametros.get("codigo") ?? "");
+    };
+
+    aplicarFiltroDaUrl();
+    window.addEventListener("popstate", aplicarFiltroDaUrl);
+    return () => window.removeEventListener("popstate", aplicarFiltroDaUrl);
+  }, []);
   useEffect(() => { setPagina(1); }, [busca, padariaId, inicio, fim]);
+
+  async function confirmarCancelamento() {
+    if (!cancelando || enviando) return;
+    const justificativa = motivo.trim();
+    if (justificativa.length < 10 || justificativa.length > 500) {
+      setErroCancelamento("A justificativa deve ter entre 10 e 500 caracteres.");
+      return;
+    }
+    setEnviando(true);
+    setErroCancelamento("");
+    try {
+      const resposta = await fetch(`/api/entregas/${cancelando.id}/cancelar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ motivo: justificativa }),
+      });
+      const resultado: { erro?: string } = await resposta.json().catch(() => ({}));
+      if (!resposta.ok) {
+        throw new Error(resultado.erro ?? "Não foi possível cancelar a movimentação.");
+      }
+      setCancelando(null);
+      setMotivo("");
+      setAviso("Movimentação cancelada. O registro foi preservado para auditoria.");
+      await carregar();
+    } catch (e) {
+      setErroCancelamento(e instanceof Error ? e.message : "Não foi possível cancelar.");
+    } finally {
+      setEnviando(false);
+    }
+  }
 
   const filtradas = useMemo(() => {
     const termo = busca.trim().toLocaleLowerCase("pt-BR");
@@ -84,7 +132,7 @@ export default function HistoricoPage() {
 
   const paginas = Math.max(1, Math.ceil(filtradas.length / porPagina));
   const exibidas = filtradas.slice((pagina - 1) * porPagina, pagina * porPagina);
-  const brutoFiltrado = filtradas.reduce((total, entrega) => total + (entrega.itens ?? []).reduce(
+  const brutoFiltrado = filtradas.filter((entrega) => !entrega.canceladoEm).reduce((total, entrega) => total + (entrega.itens ?? []).reduce(
     (soma, item) => soma + item.quantidadeEntregue * Number(item.precoUnitario), 0
   ), 0);
 
@@ -131,29 +179,37 @@ export default function HistoricoPage() {
           </div>
         </section>
 
+        {aviso && <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{aviso}</div>}
+
         <section className="grid gap-4 sm:grid-cols-2">
           <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-center gap-2 text-sm text-slate-500"><CalendarDays size={16}/> Movimentações encontradas</div><p className="mt-2 text-2xl font-bold text-slate-900">{filtradas.length}</p></div>
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><p className="text-sm text-slate-500">Valor bruto entregue (não é valor do acerto)</p><p className="mt-2 text-2xl font-bold text-slate-900">{dinheiro(brutoFiltrado)}</p></div>
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><p className="text-sm text-slate-500">Valor bruto das entregas ativas (não é valor do acerto)</p><p className="mt-2 text-2xl font-bold text-slate-900">{dinheiro(brutoFiltrado)}</p></div>
         </section>
 
         <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-200 p-5"><h2 className="font-semibold text-slate-900">Entregas registradas</h2><p className="text-xs text-slate-500">Os PDFs estão disponíveis para entregas com acerto financeiro registrado.</p></div>
+          <div className="border-b border-slate-200 p-5"><h2 className="font-semibold text-slate-900">Entregas registradas</h2><p className="text-xs text-slate-500">Movimentações canceladas permanecem visíveis para consulta, sem comprovante válido.</p></div>
           {erro ? <div role="alert" className="p-6 text-red-700">{erro}</div> : carregando ? <div className="p-10 text-center text-slate-500">Carregando histórico...</div> : filtradas.length === 0 ? <div className="p-10 text-center text-slate-500">Nenhuma movimentação encontrada.</div> : (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[780px] text-left text-sm">
-                <thead className="bg-slate-50 text-slate-600"><tr><th className="p-4">Data</th><th className="p-4">Código</th><th className="p-4">Padaria</th><th className="p-4">Produtos</th><th className="p-4">Valor bruto</th><th className="p-4">Situação</th><th className="p-4">Comprovante</th></tr></thead>
+                <thead className="bg-slate-50 text-slate-600"><tr><th className="p-4">Data</th><th className="p-4">Código</th><th className="p-4">Padaria</th><th className="p-4">Produtos</th><th className="p-4">Valor bruto</th><th className="p-4">Situação</th><th className="p-4">Comprovante</th><th className="p-4">Ações</th></tr></thead>
                 <tbody>
                   {exibidas.map((entrega) => {
                     const bruto = (entrega.itens ?? []).reduce((soma, item) => soma + item.quantidadeEntregue * Number(item.precoUnitario), 0);
                     const quantidade = (entrega.itens ?? []).reduce((soma, item) => soma + item.quantidadeEntregue, 0);
-                    return <tr key={entrega.id} className="border-t border-slate-100 text-slate-700">
+                    return <tr key={entrega.id} className={`border-t border-slate-100 text-slate-700 ${entrega.canceladoEm ? "bg-red-50/60" : ""}`}>
                       <td className="p-4 whitespace-nowrap">{dataBR(entrega.dataEntrega)}</td>
                       <td className="p-4 font-mono text-xs">{entrega.codigo}</td>
                       <td className="p-4 font-medium">{entrega.padaria?.nome ?? "—"}</td>
                       <td className="p-4">{quantidade} un. · {(entrega.itens ?? []).map(item => item.produto?.nome ?? "Produto").join(", ")}</td>
                       <td className="p-4 whitespace-nowrap">{dinheiro(bruto)}</td>
-                      <td className="p-4">{entrega.status.replaceAll("_", " ")}</td>
-                      <td className="p-4"><a href={`/api/comprovantes/${entrega.id}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 font-semibold text-emerald-800 hover:bg-emerald-100"><ArrowDownToLine size={16}/> PDF</a></td>
+                      <td className="p-4">{entrega.canceladoEm ? <span title={entrega.motivoCancelamento ?? "Cancelada"} className="font-semibold text-red-700">CANCELADA</span> : entrega.status.replaceAll("_", " ")}</td>
+                      <td className="p-4">{entrega.canceladoEm ? <span className="text-xs text-red-700">Indisponível</span> : <a href={`/api/comprovantes/${entrega.id}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 font-semibold text-emerald-800 hover:bg-emerald-100"><ArrowDownToLine size={16}/> PDF</a>}</td>
+                      <td className="p-4">{entrega.canceladoEm ? <span className="text-xs text-slate-500">Já cancelada</span> : (
+                        <button type="button" onClick={() => { setCancelando(entrega); setMotivo(""); setErroCancelamento(""); setAviso(""); }}
+                          className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100">
+                          <Ban size={15}/> Cancelar
+                        </button>
+                      )}</td>
                     </tr>;
                   })}
                 </tbody>
@@ -165,6 +221,35 @@ export default function HistoricoPage() {
             <div className="flex gap-2"><button type="button" disabled={pagina <= 1} onClick={() => setPagina((p) => p-1)} className="rounded-lg border px-3 py-2 disabled:opacity-40">Anterior</button><button type="button" disabled={pagina >= paginas} onClick={() => setPagina((p) => p+1)} className="rounded-lg border px-3 py-2 disabled:opacity-40">Próxima</button></div>
           </div>}
         </section>
+        {cancelando && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 px-4 py-6" role="presentation">
+            <div role="dialog" aria-modal="true" aria-labelledby="titulo-cancelamento" className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 id="titulo-cancelamento" className="text-xl font-bold text-slate-900">Cancelar movimentação</h2>
+                  <p className="mt-1 text-sm text-slate-600">{cancelando.codigo} — {cancelando.padaria.nome}</p>
+                </div>
+                <button type="button" aria-label="Fechar" disabled={enviando} onClick={() => setCancelando(null)} className="rounded-md p-1 text-slate-500 hover:bg-slate-100"><X size={20}/></button>
+              </div>
+              <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+                O cancelamento é permanente e fica registrado na Auditoria. A API não permite cancelar movimentações finalizadas, com pagamento vinculado ou com devoluções relacionadas, mesmo se o pagamento estiver pendente.
+              </div>
+              <label htmlFor="motivo-cancelamento" className="mt-5 block text-sm font-semibold text-slate-700">Justificativa obrigatória (10 a 500 caracteres)</label>
+              <textarea id="motivo-cancelamento" rows={4} maxLength={500} value={motivo} onChange={(e) => setMotivo(e.target.value)} disabled={enviando}
+                placeholder="Explique por que essa movimentação foi lançada incorretamente..."
+                className="mt-2 w-full rounded-lg border border-slate-300 p-3 text-sm text-slate-900 focus:border-red-500 focus:outline-none focus:ring-2 focus:ring-red-100"/>
+              <p className="mt-1 text-right text-xs text-slate-500">{motivo.trim().length}/500 caracteres</p>
+              {erroCancelamento && <p role="alert" className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{erroCancelamento}</p>}
+              <div className="mt-5 flex flex-wrap justify-end gap-3">
+                <button type="button" disabled={enviando} onClick={() => setCancelando(null)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50">Voltar</button>
+                <button type="button" disabled={enviando || motivo.trim().length < 10 || motivo.trim().length > 500}
+                  onClick={() => void confirmarCancelamento()} className="rounded-lg bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-50">
+                  {enviando ? "Cancelando..." : "Confirmar cancelamento"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

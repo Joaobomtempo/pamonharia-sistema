@@ -39,6 +39,7 @@ enum StatusEntrega {
 enum StatusPagamento {
   PENDENTE
   PAGO
+  CANCELADO
 }
 
 enum AcaoHistorico {
@@ -125,15 +126,17 @@ model Entrega {
   finalizadaPorId Int?
   dataFinalizacao DateTime?
 
+  canceladoEm         DateTime?
+  canceladoPorId      Int?
+  motivoCancelamento String?
+
   padaria       Padaria  @relation(fields: [padariaId], references: [id])
   criadoPor     Usuario  @relation("EntregaCriadaPor", fields: [criadoPorId], references: [id])
   finalizadaPor Usuario? @relation("EntregaFinalizadaPor", fields: [finalizadaPorId], references: [id])
 
   itens      ItemEntrega[]
   devolucoes Devolucao[]
-
-  // Acerto associado Ã  nova entrega desta movimentaÃ§Ã£o.
-  acerto AcertoMovimentacao?
+  acerto     AcertoMovimentacao?
 }
 
 model ItemEntrega {
@@ -160,12 +163,14 @@ model Devolucao {
   registradaPorId Int
   registradaEm    DateTime @default(now())
 
+  canceladoEm         DateTime?
+  canceladoPorId      Int?
+  motivoCancelamento String?
+
   entrega       Entrega @relation(fields: [entregaId], references: [id], onDelete: Cascade)
   registradaPor Usuario @relation("DevolucaoRegistradaPor", fields: [registradaPorId], references: [id])
 
-  itens ItemDevolucao[]
-
-  // Acerto em que esta devoluÃ§Ã£o foi recebida.
+  itens   ItemDevolucao[]
   acerto AcertoMovimentacao?
 }
 
@@ -197,6 +202,10 @@ model Pagamento {
   criadoEm        DateTime        @default(now())
   atualizadoEm    DateTime        @updatedAt
 
+  canceladoEm         DateTime?
+  canceladoPorId      Int?
+  motivoCancelamento String?
+
   padaria       Padaria  @relation(fields: [padariaId], references: [id])
   registradoPor Usuario? @relation("PagamentoRegistradoPor", fields: [registradoPorId], references: [id])
 
@@ -217,33 +226,20 @@ model PagamentoItem {
   itemEntrega ItemEntrega @relation(fields: [itemEntregaId], references: [id])
 }
 
-// Novo: fechamento financeiro individual de cada movimentaÃ§Ã£o.
 model AcertoMovimentacao {
   id Int @id @default(autoincrement())
-
-  // Nova entrega da movimentaÃ§Ã£o.
   entregaId Int @unique
-
-  // DevoluÃ§Ã£o recebida durante a mesma movimentaÃ§Ã£o.
-  // Pode ser nula na primeira visita.
   devolucaoId Int? @unique
-
   quantidadeEntregue  Int
   quantidadeDevolvida Int
-
   valorBruto     Decimal @db.Decimal(10, 2)
   valorDevolvido Decimal @db.Decimal(10, 2)
   valorDevido    Decimal @db.Decimal(10, 2)
-
-  // Nulo enquanto nÃ£o estiver incluÃ­do em um fechamento.
   pagamentoId Int?
-
   criadoEm DateTime @default(now())
 
   entrega Entrega @relation(fields: [entregaId], references: [id], onDelete: Restrict)
-
   devolucao Devolucao? @relation(fields: [devolucaoId], references: [id], onDelete: Restrict)
-
   pagamento Pagamento? @relation(fields: [pagamentoId], references: [id], onDelete: Restrict)
 
   @@index([pagamentoId])
@@ -271,4 +267,16 @@ model AcessoSistema {
   tentativas Int      @default(1)
 
   usuario Usuario @relation(fields: [usuarioId], references: [id])
+}
+
+// Tabela criada pela migração 20261020200000_limite_tentativas_login.
+// Apenas espelha sua estrutura; não exige uma nova migração.
+model TentativaLogin {
+  chave        String    @id @db.VarChar(64)
+  tentativas   Int       @default(0)
+  janelaInicio DateTime  @db.Timestamp(3)
+  bloqueadoAte DateTime? @db.Timestamp(3)
+  atualizadoEm DateTime  @default(now()) @db.Timestamp(3)
+
+  @@index([atualizadoEm], map: "TentativaLogin_atualizadoEm_idx")
 }

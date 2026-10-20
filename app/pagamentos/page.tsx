@@ -47,7 +47,9 @@ type Pagamento = {
   valorDevido: string | number;
   valorRecebido: string | number | null;
   divergencia: boolean;
-  status: "PENDENTE" | "PAGO";
+  status: "PENDENTE" | "PAGO" | "CANCELADO";
+  canceladoEm?: string | null;
+  motivoCancelamento?: string | null;
   dataPagamento: string | null;
   criadoEm: string;
   padaria: Padaria;
@@ -91,6 +93,7 @@ export default function PagamentosPage() {
   const [criando, setCriando] = useState(false);
   const [carregando, setCarregando] = useState(true);
   const [recebendoId, setRecebendoId] = useState<number | null>(null);
+  const [cancelandoId, setCancelandoId] = useState<number | null>(null);
   const [erro, setErro] = useState("");
 
   const carregarDados = useCallback(async () => {
@@ -217,6 +220,37 @@ export default function PagamentosPage() {
     }
   }
 
+  async function cancelarFechamento(pagamento: Pagamento) {
+    if (pagamento.status !== "PENDENTE") return;
+    const motivo = window.prompt(`Justificativa para cancelar o fechamento #${pagamento.id} (10 a 500 caracteres):`);
+    if (motivo === null) return;
+    if (motivo.trim().length < 10 || motivo.trim().length > 500) {
+      alert("Informe uma justificativa entre 10 e 500 caracteres.");
+      return;
+    }
+    if (!window.confirm(`Cancelar o fechamento #${pagamento.id}, no valor de ${dinheiro(pagamento.valorDevido)}? Os acertos serão liberados e a operação ficará registrada na auditoria.`)) return;
+    try {
+      setCancelandoId(pagamento.id);
+      const resposta = await fetch(`/api/pagamentos/${pagamento.id}/cancelar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ motivo: motivo.trim() }),
+      });
+      const dados = await lerResposta(resposta);
+      if (!resposta.ok) {
+        alert(mensagemErro(dados, "Não foi possível cancelar o fechamento."));
+        return;
+      }
+      await carregarDados();
+      alert("Fechamento cancelado. Acertos liberados para correção.");
+    } catch (e) {
+      console.error(e);
+      alert("Falha de conexão ao cancelar fechamento.");
+    } finally {
+      setCancelandoId(null);
+    }
+  }
+
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-8 text-slate-900 sm:px-6">
       <div className="mx-auto max-w-6xl space-y-7">
@@ -284,21 +318,22 @@ export default function PagamentosPage() {
             <div className="space-y-5 p-5 sm:p-6">
               {pagamentos.map((pagamento) => {
                 const pago = pagamento.status === "PAGO";
+                const cancelado = pagamento.status === "CANCELADO";
                 const temDivergencia = pagamento.divergencia === true;
                 return (
-                  <article key={pagamento.id} className={`overflow-hidden rounded-2xl border ${temDivergencia ? "border-red-200" : pago ? "border-emerald-200" : "border-amber-200"}`}>
-                    <div className={`flex flex-wrap items-start justify-between gap-4 p-5 ${temDivergencia ? "bg-red-50" : pago ? "bg-emerald-50" : "bg-amber-50"}`}>
+                  <article key={pagamento.id} className={`overflow-hidden rounded-2xl border ${cancelado ? "border-slate-300" : temDivergencia ? "border-red-200" : pago ? "border-emerald-200" : "border-amber-200"}`}>
+                    <div className={`flex flex-wrap items-start justify-between gap-4 p-5 ${cancelado ? "bg-slate-100" : temDivergencia ? "bg-red-50" : pago ? "bg-emerald-50" : "bg-amber-50"}`}>
                       <div>
                         <h3 className="text-lg font-bold">{pagamento.padaria.nome}</h3>
                         <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-600">
                           <span>Pagamento #{pagamento.id}</span>
                           <span aria-hidden="true">·</span>
                           <span>{dataBR(pagamento.dataInicio)} até {dataBR(pagamento.dataFim)}</span>
-                          <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${pago ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>{pago ? "PAGO" : "PENDENTE"}</span>
+                          <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${cancelado ? "bg-slate-200 text-slate-700" : pago ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>{cancelado ? "CANCELADO" : pago ? "PAGO" : "PENDENTE"}</span>
                           {temDivergencia && <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-800">DIVERGÊNCIA</span>}
                         </div>
                       </div>
-                      <div className="sm:text-right"><p className="text-sm text-slate-600">Valor devido</p><p className="text-2xl font-bold">{dinheiro(pagamento.valorDevido)}</p></div>
+                      <div className="sm:text-right"><p className="text-sm text-slate-600">Valor original do fechamento</p><p className="text-2xl font-bold">{dinheiro(pagamento.valorDevido)}</p></div>
                     </div>
 
                     <div className="grid gap-3 border-y border-slate-200 p-5 sm:grid-cols-3">
@@ -309,7 +344,9 @@ export default function PagamentosPage() {
 
                     <div className="overflow-x-auto p-5">
                       <h4 className="mb-3 font-semibold">Acertos incluídos no fechamento</h4>
-                      {pagamento.acertos?.length > 0 ? (
+                      {cancelado ? (
+                        <p className="rounded-lg bg-slate-100 p-4 text-sm text-slate-700">Fechamento cancelado. Os acertos foram liberados para correção; os valores e vínculos originais estão preservados na Auditoria.</p>
+                      ) : pagamento.acertos?.length > 0 ? (
                         <table className="w-full min-w-[650px] text-left text-sm">
                           <thead><tr className="border-b border-slate-200 text-slate-500"><th className="pb-3 pr-4">Entrega</th><th className="pb-3 pr-4">Qtd. entregue</th><th className="pb-3 pr-4">Qtd. devolvida</th><th className="pb-3 pr-4">Bruto</th><th className="pb-3 pr-4">Devolvido</th><th className="pb-3">Devido</th></tr></thead>
                           <tbody>{pagamento.acertos.map((acerto) => (
@@ -325,13 +362,20 @@ export default function PagamentosPage() {
                       ) : <p className="text-sm text-amber-700">Este fechamento não possui itens vinculados. Verifique os dados antes de registrar o recebimento.</p>}
                     </div>
 
-                    {!pago ? (
+                    {cancelado ? (
+                      <div className="border-t border-slate-200 bg-slate-100 p-5 text-sm text-slate-700">
+                        <p className="font-semibold">Fechamento cancelado</p>
+                        {pagamento.motivoCancelamento && <p className="mt-1">Motivo: {pagamento.motivoCancelamento}</p>}
+                        {pagamento.canceladoEm && <p className="mt-1">Cancelado em: {new Date(pagamento.canceladoEm).toLocaleString("pt-BR")}</p>}
+                      </div>
+                    ) : !pago ? (
                       <div className="border-t border-amber-200 bg-amber-50 p-5">
                         <h4 className="font-semibold text-amber-900">Registrar recebimento</h4>
                         <p className="mt-1 text-sm text-amber-800">Informe o valor pago pela padaria. Divergências exigem confirmação.</p>
                         <div className="mt-4 flex flex-wrap items-end gap-3">
                           <div><label htmlFor={`valor-${pagamento.id}`} className="mb-2 block text-sm font-semibold">Valor recebido (R$)</label><input id={`valor-${pagamento.id}`} type="number" min="0" step="0.01" value={valoresRecebidos[pagamento.id] ?? ""} onChange={(e) => setValoresRecebidos((anterior) => ({ ...anterior, [pagamento.id]: e.target.value }))} placeholder="Ex.: 90.00" className="w-full rounded-xl border border-amber-300 bg-white px-4 py-3 outline-none focus:border-amber-500" /></div>
                           <button type="button" onClick={() => void registrarRecebimento(pagamento)} disabled={recebendoId !== null} className="rounded-xl bg-emerald-700 px-6 py-3 font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">{recebendoId === pagamento.id ? "Registrando..." : "Registrar recebimento"}</button>
+                          <button type="button" onClick={() => void cancelarFechamento(pagamento)} disabled={cancelandoId !== null || recebendoId !== null} className="mt-4 rounded-xl border border-red-300 bg-white px-5 py-3 font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50">{cancelandoId === pagamento.id ? "Cancelando..." : "Cancelar fechamento"}</button>
                         </div>
                       </div>
                     ) : <div className="border-t border-emerald-200 bg-emerald-50 p-5 text-sm font-semibold text-emerald-800">✓ Recebimento registrado{temDivergencia ? " com divergência confirmada." : "."}</div>}
