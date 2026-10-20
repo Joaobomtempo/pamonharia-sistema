@@ -76,6 +76,7 @@ export default function EntregasPage() {
   >([]);
 
   const [carregando, setCarregando] = useState(false);
+  const [ultimoComprovante, setUltimoComprovante] = useState<number | null>(null);
   const [carregandoDados, setCarregandoDados] =
     useState(true);
 
@@ -387,6 +388,27 @@ export default function EntregasPage() {
     produtos,
   ]);
 
+  async function baixarComprovante(entregaId: number) {
+    try {
+      const resposta = await fetch(`/api/comprovantes/${entregaId}`, { cache: "no-store" });
+      if (!resposta.ok) {
+        const dados = await resposta.json().catch(() => null);
+        throw new Error(dados?.erro || "Não foi possível gerar o comprovante.");
+      }
+      const arquivo = await resposta.blob();
+      const url = URL.createObjectURL(arquivo);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `comprovante-entrega-${entregaId}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (erro) {
+      alert(erro instanceof Error ? erro.message : "Erro ao baixar comprovante.");
+    }
+  }
+
   async function registrarMovimentacao(
     evento: FormEvent
   ) {
@@ -604,6 +626,10 @@ export default function EntregasPage() {
         );
         await carregarDados();
         return;
+      }
+
+      if (dados.entrega?.id) {
+        setUltimoComprovante(Number(dados.entrega.id));
       }
 
       alert(
@@ -1260,6 +1286,21 @@ export default function EntregasPage() {
                 className="w-full resize-none rounded-xl border border-slate-300 px-4 py-3 text-slate-900 outline-none focus:border-orange-500 focus:ring-4 focus:ring-orange-100"
               />
             </section>
+
+            {ultimoComprovante !== null && (
+              <div className="mb-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                <p className="mb-2 text-sm font-semibold text-emerald-900">
+                  Comprovante da última movimentação registrada (entrega #{ultimoComprovante})
+                </p>
+                <button
+                  type="button"
+                  onClick={() => baixarComprovante(ultimoComprovante)}
+                  className="rounded-lg bg-emerald-700 px-4 py-2 font-semibold text-white hover:bg-emerald-800"
+                >
+                  Baixar comprovante PDF
+                </button>
+              </div>
+            )}
 
             <div className="mb-10 flex justify-end">
               <button

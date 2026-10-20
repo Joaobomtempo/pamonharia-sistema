@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, Truck, ReceiptText, ChartNoAxesCombined,
-  Store, Package, Users, Wrench, Headset, LogOut,
+  Store, Package, Users, Wrench, Headset, LogOut, ClipboardList,
   Menu, X, ChevronRight, Leaf, RotateCcw,
 } from "lucide-react";
 
@@ -17,6 +17,7 @@ const itens: ItemMenu[] = [
   { label: "Dashboard", href: "/", icon: LayoutDashboard, perfis: ["DONO"] },
   { label: "Movimentações", href: "/entregas", icon: Truck, perfis: ["DONO", "FUNCIONARIO"] },
   { label: "Devoluções", href: "/devolucoes", icon: RotateCcw, perfis: ["DONO", "FUNCIONARIO"] },
+  { label: "Histórico", href: "/historico", icon: ClipboardList, perfis: ["DONO", "FUNCIONARIO"] },
   { label: "Pagamentos", href: "/pagamentos", icon: ReceiptText, perfis: ["DONO"] },
   { label: "Relatórios", href: "/relatorios", icon: ChartNoAxesCombined, perfis: ["DONO"] },
   { label: "Padarias", href: "/padarias", icon: Store, perfis: ["DONO"] },
