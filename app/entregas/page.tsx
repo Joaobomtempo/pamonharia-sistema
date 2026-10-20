@@ -1142,12 +1142,10 @@ export default function EntregasPage() {
                       </thead>
 
                       <tbody>
-                        {resumoMovimentacao.produtosResumo.map(
-                          (item) => (
+                       {resumoMovimentacao.produtosResumo.map(
+                          (item, indice) => (
                             <tr
-                              key={
-                                item.produtoId
-                              }
+                              key={`${item.produtoId}-${indice}`}
                               className="border-b border-slate-100"
                             >
                               <td className="py-4 font-semibold text-slate-900">
@@ -1157,7 +1155,7 @@ export default function EntregasPage() {
                               <td className="py-4 text-blue-700">
                                 {
                                   item.quantidadeEntregue
-                                }
+                                } 
                               </td>
 
                               <td className="py-4 text-red-600">

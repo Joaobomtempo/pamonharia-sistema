@@ -18,7 +18,7 @@ export async function proxy(request: NextRequest) {
     return resposta;
   }
   if (session.tipo === "FUNCIONARIO") {
-    const permitted = pathname === "/entregas" || pathname === "/devolucoes" || pathname === "/api/auth/me" ||
+    const permitted = pathname === "/entregas" || pathname === "/devolucoes" || pathname === "/suporte" || pathname === "/api/auth/me" ||
       ((pathname === "/api/entregas" || pathname === "/api/devolucoes" || pathname === "/api/movimentacoes") && (request.method === "GET" || request.method === "POST")) ||
       ((pathname === "/api/padarias" || pathname === "/api/produtos") && request.method === "GET");
     if (!permitted) {
@@ -28,7 +28,7 @@ export async function proxy(request: NextRequest) {
     }
   }
   if (session.tipo === "DESENVOLVEDOR") {
-    const permitted = pathname === "/manutencao" || pathname === "/api/manutencao" || pathname === "/api/auth/me";
+    const permitted = pathname === "/manutencao" || pathname === "/api/manutencao" || pathname === "/suporte" || pathname === "/api/auth/me";
     if (!permitted) {
       if (pathname.startsWith("/api/")) return NextResponse.json({ erro: "Acesso técnico restrito." }, { status: 403 });
       const url = request.nextUrl.clone(); url.pathname = "/manutencao"; url.search = "";
