@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { autorizarUsuario } from "../../../lib/autorizarUsuario";
 import { prisma } from "../../../lib/prisma";
 
 type ItemNovaEntrega = {
@@ -12,8 +13,11 @@ type ItemDevolucaoRecebido = {
   quantidadeDevolvida: number;
 };
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
+    const acesso = await autorizarUsuario(request, ["DONO", "FUNCIONARIO"]);
+    if (!acesso.ok) return NextResponse.json({ erro: acesso.erro }, { status: acesso.status });
+    const usuario = acesso.usuario;
     const body = await request.json();
 
     const padariaId = Number(body.padariaId);
@@ -58,24 +62,6 @@ export async function POST(request: Request) {
         {
           erro:
             "Informe pelo menos um produto para a nova entrega.",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
-    /*
-     * Por enquanto usamos o primeiro usuário,
-     * pois o login ainda será implementado.
-     */
-    const usuario =
-      await prisma.usuario.findFirst();
-
-    if (!usuario) {
-      return NextResponse.json(
-        {
-          erro: "Nenhum usuário cadastrado.",
         },
         {
           status: 400,
@@ -738,6 +724,27 @@ export async function POST(request: Request) {
               valorBruto: valorBruto.toFixed(2),
               valorDevolvido: valorDevolvido.toFixed(2),
               valorDevido: valorDevido.toFixed(2),
+            },
+          });
+
+          await tx.historico.create({
+            data: {
+              tabelaAfetada: "Entrega",
+              registroId: novaEntrega.id,
+              acao: "CRIADO",
+              realizadoPorId: usuario.id,
+              dadosNovos: {
+                codigo: novaEntrega.codigo,
+                padariaId,
+                dataEntrega: String(dataEntrega),
+                acertoId: acerto.id,
+                devolucaoId: novaDevolucao?.id ?? null,
+                quantidadeEntregue,
+                quantidadeDevolvida,
+                valorBruto: valorBruto.toFixed(2),
+                valorDevolvido: valorDevolvido.toFixed(2),
+                valorDevido: valorDevido.toFixed(2),
+              },
             },
           });
 

@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, Truck, ReceiptText, ChartNoAxesCombined,
   Store, Package, Users, Wrench, Headset, LogOut, ClipboardList,
-  Menu, X, ChevronRight, Leaf, RotateCcw,
+  Menu, X, ChevronRight, Leaf, RotateCcw, ShieldCheck,
 } from "lucide-react";
 
 type Perfil = "DONO" | "FUNCIONARIO" | "DESENVOLVEDOR";
@@ -18,6 +18,7 @@ const itens: ItemMenu[] = [
   { label: "Movimentações", href: "/entregas", icon: Truck, perfis: ["DONO", "FUNCIONARIO"] },
   { label: "Devoluções", href: "/devolucoes", icon: RotateCcw, perfis: ["DONO", "FUNCIONARIO"] },
   { label: "Histórico", href: "/historico", icon: ClipboardList, perfis: ["DONO", "FUNCIONARIO"] },
+  { label: "Auditoria", href: "/auditoria", icon: ShieldCheck, perfis: ["DONO"] },
   { label: "Pagamentos", href: "/pagamentos", icon: ReceiptText, perfis: ["DONO"] },
   { label: "Relatórios", href: "/relatorios", icon: ChartNoAxesCombined, perfis: ["DONO"] },
   { label: "Padarias", href: "/padarias", icon: Store, perfis: ["DONO"] },
