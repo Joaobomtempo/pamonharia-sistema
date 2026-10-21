@@ -129,23 +129,27 @@ export default function Dashboard() {
           </div>
         ) : dados ? (
           <>
+            {/* 1. INDICADORES PRINCIPAIS */}
             <Indicadores indicadores={dados.indicadores} />
 
+            {/* 2. AÇÕES RÁPIDAS */}
+            <AcoesRapidas />
+
+            {/* 3. ÚLTIMAS MOVIMENTAÇÕES E PAGAMENTOS */}
             <div className="grid gap-6 xl:grid-cols-2">
               <UltimasMovimentacoes
                 entregas={dados.ultimasMovimentacoes}
               />
+
               <PendingPayments
                 pagamentos={dados.pagamentosPendentes}
               />
             </div>
 
-            <div className="grid gap-6 xl:grid-cols-2">
-              <TopPadarias
-                padarias={dados.rankingPadarias}
-              />
-              <AcoesRapidas />
-            </div>
+            {/* 4. RANKING DE PADARIAS */}
+            <TopPadarias
+              padarias={dados.rankingPadarias}
+            />
           </>
         ) : (
           <div className="rounded-xl border bg-white p-10 text-center text-slate-500">

@@ -1,0 +1,166 @@
+/* Pamonharia Rocinha — primeira camada de usabilidade no celular.
+   Estilos limitados ao conteúdo autenticado, sem alterar regras de negócio. */
+@media (max-width: 640px) {
+  .erp-content { min-width: 0; }
+  .erp-content > main { width: 100%; min-width: 0; padding: 16px 12px 28px; }
+  .erp-content > main > div { min-width: 0; max-width: 100%; }
+  .erp-content :is(h1,h2,h3,p,span,strong,label) { overflow-wrap: break-word; }
+  .erp-content :is(input,select,textarea) { max-width: 100%; min-width: 0; font-size: 16px; }
+  .erp-content :is(button,[role="button"]) { min-height: 44px; touch-action: manipulation; }
+  .erp-content :is(form,section,article) { min-width: 0; }
+  .erp-content :is(table) { width: 100%; }
+  .erp-content :is(.overflow-x-auto, .overflow-auto) { -webkit-overflow-scrolling: touch; }
+  .erp-content :is(td,th) { vertical-align: top; }
+  .erp-header { min-height: 64px; }
+  .erp-header-info h1 { line-height: 1.25; }
+  .erp-footer { padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+}
+@media (max-width: 380px) {
+  .erp-content > main { padding-inline: 10px; }
+  .erp-header { gap: 9px; padding-inline: 10px; }
+}
+
+/* Dashboard Pamonharia Rocinha — indicadores responsivos */
+
+.pr-dashboard-indicadores {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  width: 100%;
+}
+
+.pr-indicador-card {
+  min-width: 0;
+  min-height: 150px;
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  background: #ffffff;
+  border: 1px solid #e1e7eb;
+  border-radius: 18px;
+  box-shadow: 0 2px 5px rgba(15, 23, 42, 0.06);
+}
+
+.pr-indicador-topo {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 10px;
+}
+
+.pr-indicador-icone {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+}
+
+.pr-indicador-icone svg {
+  display: block;
+  width: 21px;
+  height: 21px;
+  flex: none;
+}
+
+.pr-indicador-laranja {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.pr-indicador-verde {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.pr-indicador-azul {
+  background: #dbeafe;
+  color: #2563eb;
+}
+
+.pr-indicador-roxo {
+  background: #ede9fe;
+  color: #7c3aed;
+}
+
+.pr-indicador-titulo {
+  font-size: 13px;
+  font-weight: 500;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+.pr-indicador-valor {
+  display: block;
+  margin-top: 5px;
+  color: #17251d;
+  font-size: clamp(19px, 2.1vw, 29px);
+  line-height: 1.2;
+  font-weight: 750;
+  overflow-wrap: anywhere;
+}
+
+.pr-indicador-descricao {
+  margin-top: 8px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* Tablets */
+@media (max-width: 1100px) {
+  .pr-dashboard-indicadores {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Celulares */
+@media (max-width: 640px) {
+  .pr-dashboard-indicadores {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .pr-indicador-card {
+    padding: 13px;
+    min-height: 155px;
+    border-radius: 15px;
+  }
+
+  .pr-indicador-icone {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+  }
+
+  .pr-indicador-icone svg {
+    width: 19px;
+    height: 19px;
+  }
+
+  .pr-indicador-titulo {
+    font-size: 12px;
+  }
+
+  .pr-indicador-valor {
+    font-size: clamp(16px, 4vw, 21px);
+  }
+
+  .pr-indicador-descricao {
+    font-size: 11px;
+  }
+}
+
+/* Ações rápidas: garantir duas colunas no celular */
+@media (max-width: 640px) {
+  .pr-acoes-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .pr-acoes-grid > * {
+    min-width: 0;
+  }
+}
