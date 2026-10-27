@@ -89,7 +89,15 @@ export default function SistemaLayout({ children }: { children: React.ReactNode 
         .erp-shell *, .erp-shell *::before, .erp-shell *::after { box-sizing: border-box; }
         .erp-sidebar { position: fixed; top: 0; bottom: 0; left: 0; width: var(--erp-nav-width); z-index: 60; display: flex; flex-direction: column; background: #0f172a; color: #f8fafc; border-right: 1px solid #243047; transition: transform .22s ease; }
         .erp-brand { display: flex; align-items: center; gap: 11px; padding: 20px 16px; border-bottom: 1px solid #293548; min-height: 86px; text-decoration: none; color: white; }
-        .erp-brand-icon { flex-shrink: 0; display: grid; place-items: center; width: 43px; height: 43px; border-radius: 13px; background: #059669; }
+        .erp-brand-icon {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 43px;
+  height: 43px;
+  border-radius: 50%;
+  background: transparent;
+}
         .erp-brand-name { margin: 0; font-size: 15px; font-weight: 750; line-height: 1.3; }
         .erp-brand-sub { margin: 3px 0 0; font-size: 11px; color: #94a3b8; }
         .erp-close { display: none; margin-left: auto; background: #26354c; border: 0; padding: 9px; color: #fff; border-radius: 9px; cursor: pointer; }
@@ -132,7 +140,18 @@ export default function SistemaLayout({ children }: { children: React.ReactNode 
       <div className={`erp-overlay${aberto ? " is-open" : ""}`} onClick={() => setAberto(false)} aria-hidden="true" />
       <aside className={`erp-sidebar${aberto ? " is-open" : ""}`} aria-label="Menu principal" id="erp-menu">
         <div className="erp-brand">
-          <span className="erp-brand-icon"><Leaf size={23}/></span>
+          <span className="erp-brand-icon">
+  <img
+    src="/branding/simbolo-pamonharia.png"
+    alt="Logo da Pamonharia Rocinha"
+    style={{
+      width: "43px",
+      height: "43px",
+      borderRadius: "50%",
+      objectFit: "cover",
+    }}
+  />
+</span>
           <Link href={inicio} onClick={() => setAberto(false)} style={{ textDecoration: "none", color: "inherit", minWidth: 0, flex: 1 }}>
             <p className="erp-brand-name">Pamonharia Rocinha</p>
             <p className="erp-brand-sub">Sistema de Gestão</p>

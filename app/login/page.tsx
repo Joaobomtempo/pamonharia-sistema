@@ -24,7 +24,27 @@ export default function LoginPage() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-100 p-5">
       <form onSubmit={entrar} className="w-full max-w-sm space-y-5 rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-        <div><h1 className="text-2xl font-bold text-slate-900">Pamonharia Rocinha</h1><p className="mt-1 text-sm text-slate-500">Entre para acessar o ERP</p></div>
+        <div className="flex flex-col items-center text-center">
+  <div
+  className="mb-4 shrink-0 overflow-hidden rounded-full border-2 border-emerald-700"
+  style={{ width: "80px", height: "80px" }}
+>
+  <img
+    src="/branding/simbolo-pamonharia.png"
+    alt="Símbolo da Pamonharia Rocinha"
+    style={{
+      width: "100%",
+      height: "100%",
+      objectFit: "cover",
+      display: "block",
+    }}
+  />
+</div>
+
+  <p className="text-sm text-slate-500">
+    Entre para acessar o ERP
+  </p>
+</div>
         <div className="space-y-1"><label htmlFor="usuario" className="text-sm font-medium">Usuário</label><input id="usuario" autoComplete="username" required value={usuario} onChange={e=>setUsuario(e.target.value)} className="w-full rounded-lg border border-slate-300 p-3 text-slate-900" /></div>
         <div className="space-y-1"><label htmlFor="senha" className="text-sm font-medium">Senha</label><input id="senha" type="password" autoComplete="current-password" required value={senha} onChange={e=>setSenha(e.target.value)} className="w-full rounded-lg border border-slate-300 p-3 text-slate-900" /></div>
         {erro && <p role="alert" className="text-sm text-red-700">{erro}</p>}
