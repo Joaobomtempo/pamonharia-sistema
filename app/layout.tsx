@@ -19,6 +19,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  verification: {
+  google: "ObIteGuIadChxeMvDks4546hfQNnmm1JFAo050DvPU4",
+},
   title: "ERP Pamonharia Rocinha",
   description: "Sistema Administrativo da Pamonharia Rocinha",
 
